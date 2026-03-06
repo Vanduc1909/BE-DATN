@@ -1,6 +1,7 @@
 import { StatusCodes } from 'http-status-codes';
 
 import {
+  changePassword,
   forgotPassword,
   forgotPasswordResponseMessage,
   getMe,
@@ -8,7 +9,8 @@ import {
   logout,
   refreshAuthTokens,
   register,
-  resetPassword
+  resetPassword,
+  updateMe
 } from '@services/auth.service';
 import { ApiError } from '@utils/api-error';
 import { asyncHandler } from '@utils/async-handler';
@@ -89,5 +91,24 @@ export const meController = asyncHandler(async (req, res) => {
   return sendSuccess(res, {
     message: 'Get profile successfully',
     data
+  });
+});
+
+export const updateMeController = asyncHandler(async (req, res) => {
+  const userId = getCurrentUserId(req);
+  const data = await updateMe(userId, req.body);
+
+  return sendSuccess(res, {
+    message: 'Update profile successfully',
+    data
+  });
+});
+
+export const changePasswordController = asyncHandler(async (req, res) => {
+  const userId = getCurrentUserId(req);
+  await changePassword(userId, req.body);
+
+  return sendSuccess(res, {
+    message: 'Change password successfully'
   });
 });
