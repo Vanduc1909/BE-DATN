@@ -45,3 +45,28 @@ export const logoutSchema = z.object({
     })
     .optional()
 });
+
+export const updateMeSchema = z.object({
+  body: z
+    .object({
+      username: z.string().min(3).max(50).optional(),
+      fullName: z.string().min(1).max(120).optional(),
+      phone: z.string().min(8).max(20).optional(),
+      avatarUrl: z.string().url().optional()
+    })
+    .refine((value) => Object.keys(value).length > 0, {
+      message: 'At least one field must be provided'
+    })
+});
+
+export const changePasswordSchema = z.object({
+  body: z
+    .object({
+      currentPassword: z.string().min(1),
+      newPassword: passwordSchema
+    })
+    .refine((value) => value.currentPassword !== value.newPassword, {
+      message: 'New password must be different from current password',
+      path: ['newPassword']
+    })
+});
