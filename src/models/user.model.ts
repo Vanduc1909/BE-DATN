@@ -6,6 +6,7 @@ export interface UserDocument {
   username?: string;
   email: string;
   passwordHash: string;
+  isActive: boolean;
   fullName?: string;
   phone?: string;
   role: Role;
@@ -38,6 +39,10 @@ const userSchema = new Schema<UserDocument>(
       type: String,
       required: true,
       select: false
+    },
+    isActive: {
+      type: Boolean,
+      default: true
     },
     fullName: {
       type: String,

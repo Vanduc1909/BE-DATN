@@ -17,6 +17,7 @@ import {
   verifyRefreshToken
 } from '@services/token.service';
 import { ApiError } from '@utils/api-error';
+import { th } from 'zod/v4/locales';
 
 interface RegisterInput {
   email: string;
@@ -49,6 +50,18 @@ interface LogoutInput {
   refreshToken?: string;
 }
 
+interface UpdateMeInput {
+  username?: string;
+  fullName?: string;
+  phone?: string;
+  avatarUrl?: string;
+}
+
+interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+}
+
 type UserLean = UserDocument & { _id: unknown };
 
 const hashPassword = async (password: string) => {
@@ -64,6 +77,7 @@ const toPublicUser = (user: UserLean) => {
     id: String(user._id),
     email: user.email,
     username: user.username,
+    isActive: user.isActive !== false,
     fullName: user.fullName,
     phone: user.phone,
     role: user.role,
@@ -75,6 +89,12 @@ const toPublicUser = (user: UserLean) => {
     createdAt: user.createdAt,
     updatedAt: user.updatedAt
   };
+};
+
+const ensureActiveAccount = (user: Pick<UserLean, 'isActive'>) => {
+  if (user.isActive === false) {
+    throw new ApiError(StatusCodes.FORBIDDEN, 'Account has been disabled');
+  }
 };
 
 export const register = async (payload: RegisterInput) => {
@@ -136,6 +156,8 @@ export const login = async (payload: LoginInput) => {
     throw new ApiError(StatusCodes.UNAUTHORIZED, 'Invalid email or password');
   }
 
+  ensureActiveAccount(user.toObject() as UserLean);
+
   const userObject = user.toObject() as UserLean;
   const tokens = await issueAuthTokens({
     userId: String(userObject._id),
@@ -162,11 +184,62 @@ export const forgotPassword = async (payload: ForgotPasswordInput) => {
     email: user.email
   });
 
+  const resetLink = `${env.FRONTEND_URL}/reset-password?token=${resetToken.token}`;
+
   const sent = await sendMail({
     to: user.email,
-    subject: 'Reset your password',
-    text: `Use this token to reset password: ${resetToken.token}`,
-    html: `<p>Use this token to reset password:</p><pre>${resetToken.token}</pre>`
+    subject: '[Golden Billiards] Đặt lại mật khẩu của bạn',
+    text: `Xin chào,\n\nBạn vừa yêu cầu đặt lại mật khẩu. Nhấn vào link sau để tiếp tục:\n${resetLink}\n\nLink có hiệu lực trong 30 phút. Nếu bạn không yêu cầu, hãy bỏ qua email này.`,
+    html: `
+<!DOCTYPE html>
+<html lang="vi">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+          <!-- Header -->
+          <tr>
+            <td style="background:#1a1a2e;padding:32px 40px;text-align:center;">
+              <h1 style="margin:0;color:#ffffff;font-size:22px;letter-spacing:1px;">🎱 Golden Billiards</h1>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px;">
+              <h2 style="margin:0 0 16px;color:#1a1a2e;font-size:20px;">Đặt lại mật khẩu</h2>
+              <p style="margin:0 0 24px;color:#555;line-height:1.6;">
+                Xin chào,<br><br>
+                Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản liên kết với email này.
+                Nhấn nút bên dưới để tiếp tục:
+              </p>
+              <div style="text-align:center;margin:32px 0;">
+                <a href="${resetLink}"
+                   style="display:inline-block;background:#e63946;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;font-size:16px;font-weight:bold;">
+                  Đặt lại mật khẩu
+                </a>
+              </div>
+              <p style="margin:0 0 8px;color:#888;font-size:13px;">
+                ⏰ Link có hiệu lực trong <strong>30 phút</strong>.
+              </p>
+              <p style="margin:0;color:#888;font-size:13px;">
+                Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này. Tài khoản của bạn vẫn an toàn.
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f4f4f5;padding:20px 40px;text-align:center;">
+              <p style="margin:0;color:#aaa;font-size:12px;">© 2026 Golden Billiards. Tất cả quyền được bảo lưu.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+  </html> `
   });
 
   if (!sent) {
@@ -194,6 +267,11 @@ export const refreshAuthTokens = async (payload: RefreshInput) => {
 
   if (!user) {
     throw new ApiError(StatusCodes.UNAUTHORIZED, 'Invalid refresh token');
+  }
+
+  if (user.isActive === false) {
+    await revokeAllRefreshSessionsForUser(String(user._id));
+    throw new ApiError(StatusCodes.FORBIDDEN, 'Account has been disabled');
   }
 
   const accessToken = createAccessToken({
@@ -229,7 +307,76 @@ export const getMe = async (userId: string) => {
     throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
   }
 
+  ensureActiveAccount(user as UserLean);
+
   return toPublicUser(user as UserLean);
+};
+
+export const updateMe = async (userId: string, payload: UpdateMeInput) => {
+  const user = await UserModel.findById(userId);
+
+  if (!user) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+  }
+
+  ensureActiveAccount(user.toObject() as UserLean);
+
+  if (payload.username !== undefined) {
+    const nextUsername = normalizeUsername(payload.username);
+
+    if (!nextUsername) {
+      throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Invalid username');
+    }
+
+    const usernameConflict = await UserModel.findOne({
+      username: nextUsername,
+      _id: {
+        $ne: user._id
+      }
+    }).lean();
+
+    if (usernameConflict) {
+      throw new ApiError(StatusCodes.CONFLICT, 'Username already exists');
+    }
+
+    user.username = nextUsername;
+  }
+
+  if (payload.fullName !== undefined) {
+    user.fullName = payload.fullName;
+  }
+
+  if (payload.phone !== undefined) {
+    user.phone = payload.phone;
+  }
+
+  if (payload.avatarUrl !== undefined) {
+    user.avatarUrl = payload.avatarUrl;
+  }
+
+  await user.save();
+
+  return toPublicUser(user.toObject() as UserLean);
+};
+
+export const changePassword = async (userId: string, payload: ChangePasswordInput) => {
+  const user = await UserModel.findById(userId).select('+passwordHash');
+
+  if (!user) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'User not found');
+  }
+
+  ensureActiveAccount(user.toObject() as UserLean);
+
+  const isCurrentPasswordMatch = await bcrypt.compare(payload.currentPassword, user.passwordHash);
+
+  if (!isCurrentPasswordMatch) {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, 'Current password is incorrect');
+  }
+
+  user.passwordHash = await hashPassword(payload.newPassword);
+  await user.save();
+  await revokeAllRefreshSessionsForUser(String(user._id));
 };
 
 export const forgotPasswordResponseMessage = () => {
