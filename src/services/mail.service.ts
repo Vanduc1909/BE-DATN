@@ -7,6 +7,8 @@ interface SendMailInput {
   subject: string;
   html: string;
   text?: string;
+  from?: string;
+  replyTo?: string;
 }
 
 export const sendMail = async (input: SendMailInput) => {
@@ -22,13 +24,19 @@ export const sendMail = async (input: SendMailInput) => {
     return false;
   }
 
-  await transporter.sendMail({
-    from: env.SMTP_FROM,
-    to: input.to,
-    subject: input.subject,
-    html: input.html,
-    text: input.text
-  });
+  try {
+    await transporter.sendMail({
+      from: input.from ?? env.SMTP_FROM,
+      to: input.to,
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+      replyTo: input.replyTo
+    });
+  } catch (error) {
+    logger.error(`Failed to send email to ${input.to}: ${(error as Error).message}`);
+    return false;
+  }
 
   return true;
 };
