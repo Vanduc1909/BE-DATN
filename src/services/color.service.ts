@@ -1,0 +1,98 @@
+import { ColorModel } from '@/models/color.model';
+import { ApiError } from '@/utils/api-error';
+import { toObjectId } from '@/utils/object-id';
+import { toPaginatedData } from '@/utils/pagination';
+import { StatusCodes } from 'http-status-codes';
+
+interface ColorPayload {
+  name: string;
+  slug: string;
+  hexCode?: string;
+  isActive?: boolean;
+}
+
+export const listColors = async (options: {
+  page: number;
+  limit: number;
+  search?: string;
+  isActive?: boolean;
+}) => {
+  const filters: Record<string, unknown> = {};
+
+  if (options.search?.trim()) {
+    const regex = new RegExp(options.search.trim(), 'i');
+    filters.$or = [{ name: regex }, { slug: regex }, { hexCode: regex }];
+  }
+
+  const totalItems = await ColorModel.countDocuments(filters);
+  const items = await ColorModel.find(filters)
+    .sort({ createdAt: -1 })
+    .skip((options.page - 1) * options.limit)
+    .limit(options.limit)
+    .lean();
+
+  return toPaginatedData(items, totalItems, options.page, options.limit);
+};
+
+export const getColorById = async (colorId: string) => {
+  const color = await ColorModel.findById(toObjectId(colorId, 'colorId')).lean();
+
+  if (!color) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Color not found');
+  }
+
+  return color;
+};
+
+export const createColor = async (payload: ColorPayload) => {
+  const created = await ColorModel.create({
+    name: payload.name,
+    slug: payload.slug,
+    hexCode: payload.hexCode?.toUpperCase(),
+    isActive: payload.isActive ?? true
+  });
+
+  return created.toObject();
+};
+
+export const updateColor = async (colorId: string, payload: Partial<ColorPayload>) => {
+  const updateData: Record<string, unknown> = {
+    ...payload
+  };
+
+  if (payload.hexCode !== undefined) {
+    updateData.hexCode = payload.hexCode ? payload.hexCode.toUpperCase() : null;
+  }
+
+  const updated = await ColorModel.findByIdAndUpdate(toObjectId(colorId, 'colorId'), updateData, {
+    returnDocument: 'after'
+  }).lean();
+
+  if (!updated) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Color not found');
+  }
+
+  return updated;
+};
+
+export const deleteColor = async (colorId: string) => {
+  const _colorId = toObjectId(colorId, 'colorId');
+  const existsInVariant = await ProductVariantModel.exists({ color: _colorId });
+
+  if (existsInVariant) {
+    throw new ApiError(
+      StatusCodes.CONFLICT,
+      'Color is being used by a product variant and cannot be deleted'
+    );
+  }
+
+  const deleted = await ColorModel.findByIdAndDelete(_colorId).lean();
+
+  if (!deleted) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Color not found');
+  }
+
+  return {
+    id: String(deleted._id)
+  };
+};
