@@ -1,0 +1,163 @@
+import { BrandModel } from '@/models/brand.model';
+import { ProductModel } from '@/models/product.model';
+import { ApiError } from '@/utils/api-error';
+import { toObjectId } from '@/utils/object-id';
+import { toPaginatedData } from '@/utils/pagination';
+import { StatusCodes } from 'http-status-codes';
+
+interface BrandPayload {
+  name: string;
+  slug: string;
+  description?: string;
+  logoUrl?: string;
+  isActive?: boolean;
+}
+
+const excapeRegex = (value: string) => {
+  return value.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+};
+
+export const normalizeBrandSlug = (value: string) => {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+};
+
+export const listBrands = async (options: {
+  page: number;
+  limit: number;
+  search?: string;
+  isActive?: boolean;
+}) => {
+  const filters: Record<string, unknown> = {};
+
+  if (typeof options.isActive === 'boolean') {
+    filters.isActive = options.isActive;
+  }
+
+  if (options.search?.trim()) {
+    const regex = new RegExp(options.search.trim(), 'i');
+    filters.$or = [{ name: regex }, { slug: regex }, { description: regex }];
+  }
+
+  const totalItems = await BrandModel.countDocuments(filters);
+  const items = await BrandModel.find(filters)
+    .sort({ createdAt: -1 })
+    .skip((options.page - 1) * options.limit)
+    .limit(options.limit)
+    .lean();
+
+  return toPaginatedData(items, totalItems, options.page, options.limit);
+};
+
+export const getBrandById = async (brandId: string) => {
+  const brand = await BrandModel.findById(toObjectId(brandId, 'brandId')).lean();
+
+  if (!brand) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Brand not found');
+  }
+  return brand;
+};
+
+export const getOrCreateBrandByName = async (brandName: string) => {
+  const normalizedName = brandName.trim();
+
+  if (!normalizedName) {
+    throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Brand name is required');
+  }
+
+  const existing = await BrandModel.findOne({
+    name: {
+      $regex: new RegExp(`^${excapeRegex(normalizedName)}$`, 'i')
+    }
+  })
+    .select('name slug isActive')
+    .lean();
+
+  if (existing) {
+    if (existing.isActive === false) {
+      throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Brand is inactive');
+    }
+
+    return existing;
+  }
+
+  const baseSlug = normalizeBrandSlug(normalizedName) || `brand`;
+  let candidateSlug = baseSlug;
+  let sequence = 1;
+
+  while (await BrandModel.exists({ slug: candidateSlug })) {
+    candidateSlug = `${baseSlug}-${sequence++}`;
+    sequence += 1;
+  }
+
+  const created = await BrandModel.create({
+    name: normalizedName,
+    slug: candidateSlug,
+    isActive: true
+  });
+
+  return created.toObject();
+};
+
+export const createBrand = async (payload: BrandPayload) => {
+  const created = await BrandModel.create({
+    name: payload.name.trim(),
+    slug: payload.slug.trim().toLowerCase(),
+    description: payload.description,
+    logoUrl: payload.logoUrl,
+    isActive: payload.isActive ?? true
+  });
+
+  return created.toObject();
+};
+
+export const updateBrand = async (brandId: string, payload: Partial<BrandPayload>) => {
+  const updateData: Record<string, unknown> = {
+    ...payload
+  };
+
+  if (payload.name !== undefined) {
+    updateData.name = payload.name.trim();
+  }
+
+  if (payload.slug !== undefined) {
+    updateData.slug = payload.slug.trim().toLowerCase();
+  }
+
+  const updated = await BrandModel.findByIdAndUpdate(toObjectId(brandId, 'brandId'), updateData, {
+    returnDocument: 'after'
+  }).lean();
+
+  if (!updated) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Brand not found');
+  }
+
+  return updated;
+};
+
+export const deleteBrand = async (brandId: string) => {
+  const _brandId = toObjectId(brandId, 'brandId');
+  const existInProduct = await ProductModel.exists({ brand: _brandId });
+
+  if (existInProduct) {
+    throw new ApiError(
+      StatusCodes.CONFLICT,
+      'Brand is being used by some products and cannot be deleted'
+    );
+  }
+
+  const deleted = await BrandModel.findByIdAndDelete(_brandId).lean();
+
+  if (!deleted) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Brand not found');
+  }
+
+  return {
+    id: String(deleted._id)
+  };
+};
