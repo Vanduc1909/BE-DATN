@@ -19,7 +19,7 @@ export const initPassport = () => {
           const payload = verifyAccessToken(token);
           const user = await UserModel.findById(payload.sub).lean();
 
-          if (!user) {
+          if (!user || user.isActive === false) {
             return done(null, false);
           }
 

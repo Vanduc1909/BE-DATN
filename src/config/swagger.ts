@@ -80,6 +80,95 @@ export const swaggerSpec = swaggerJSDoc({
           security: [{ bearerAuth: [] }]
         }
       },
+      '/products/top-selling': {
+        get: {
+          tags: ['Products'],
+          summary: 'Get top selling products'
+        }
+      },
+      '/products/newest': {
+        get: {
+          tags: ['Products'],
+          summary: 'Get newest products'
+        }
+      },
+      '/products/filters': {
+        get: {
+          tags: ['Products'],
+          summary: 'Get storefront category and brand filters'
+        }
+      },
+      '/colors': {
+        get: {
+          tags: ['Colors'],
+          summary: 'List colors'
+        },
+        post: {
+          tags: ['Colors'],
+          summary: 'Create color',
+          security: [{ bearerAuth: [] }]
+        }
+      },
+      '/colors/{colorId}': {
+        get: {
+          tags: ['Colors'],
+          summary: 'Get color by id'
+        },
+        patch: {
+          tags: ['Colors'],
+          summary: 'Update color',
+          security: [{ bearerAuth: [] }]
+        },
+        delete: {
+          tags: ['Colors'],
+          summary: 'Delete color',
+          security: [{ bearerAuth: [] }]
+        }
+      },
+      '/sizes': {
+        get: {
+          tags: ['Sizes'],
+          summary: 'List sizes'
+        },
+        post: {
+          tags: ['Sizes'],
+          summary: 'Create size',
+          security: [{ bearerAuth: [] }]
+        }
+      },
+      '/sizes/{sizeId}': {
+        get: {
+          tags: ['Sizes'],
+          summary: 'Get size by id'
+        },
+        patch: {
+          tags: ['Sizes'],
+          summary: 'Update size',
+          security: [{ bearerAuth: [] }]
+        },
+        delete: {
+          tags: ['Sizes'],
+          summary: 'Delete size',
+          security: [{ bearerAuth: [] }]
+        }
+      },
+      '/reviews/product/{productId}': {
+        get: {
+          tags: ['Reviews'],
+          summary: 'List reviews by product'
+        }
+      },
+      '/comments': {
+        get: {
+          tags: ['Comments'],
+          summary: 'List comments by target'
+        },
+        post: {
+          tags: ['Comments'],
+          summary: 'Create comment',
+          security: [{ bearerAuth: [] }]
+        }
+      },
       '/upload/image': {
         post: {
           tags: ['Upload'],

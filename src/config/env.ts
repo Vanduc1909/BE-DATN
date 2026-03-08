@@ -5,7 +5,7 @@ dotenv.config({ quiet: true });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  APP_NAME: z.string().default('poly2026-be'),
+  APP_NAME: z.string().default('golden-billiards-be'),
   PORT: z.coerce.number().default(8080),
   API_PREFIX: z.string().default('/api/v1'),
   LOG_LEVEL: z.string().default('info'),
@@ -33,9 +33,19 @@ const envSchema = z.object({
 
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),
+  SMTP_SERVICE: z.string().optional(),
+  SMTP_SECURE: z.string().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
-  SMTP_FROM: z.string().optional()
+   SMTP_FROM: z.string().optional(),
+
+  FRONTEND_URL: z.string().default('http://localhost:3000'),
+
+  VNP_API: z.string().optional(),
+  VNP_HASHSECRET: z.string().optional(),
+  VNP_RETURNURL: z.string().optional(),
+  VNP_TMNCODE: z.string().optional(),
+  VNP_URL: z.string().optional()
 });
 
 const parsedEnv = envSchema.parse(process.env);
