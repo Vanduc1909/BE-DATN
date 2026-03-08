@@ -12,16 +12,12 @@ export const validate = (schema: ZodTypeAny) => {
         params: req.params
       }) as {
         body?: Request['body'];
-        query?: Request['query'];
+        
         params?: Request['params'];
       };
 
       if (parsed.body) {
         req.body = parsed.body;
-      }
-
-      if (parsed.query) {
-        req.query = parsed.query;
       }
 
       if (parsed.params) {
