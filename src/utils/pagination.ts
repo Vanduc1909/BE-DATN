@@ -29,12 +29,7 @@ export const parsePagination = (
   };
 };
 
-export const toPaginatedData = <T>(
-  items: T[],
-  totalItems: number,
-  page: number,
-  limit: number
-) => {
+export const toPaginatedData = <T>(items: T[], totalItems: number, page: number, limit: number) => {
   const totalPages = Math.max(1, Math.ceil(totalItems / limit));
 
   return {
