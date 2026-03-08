@@ -1,4 +1,5 @@
 import { ColorModel } from '@/models/color.model';
+import { ProductVariantModel } from '@/models/product-variant.model';
 import { ApiError } from '@/utils/api-error';
 import { toObjectId } from '@/utils/object-id';
 import { toPaginatedData } from '@/utils/pagination';
