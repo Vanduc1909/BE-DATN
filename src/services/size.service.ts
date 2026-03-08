@@ -1,3 +1,4 @@
+import { ProductVariantModel } from '@/models/product-variant.model';
 import { SizeModel } from '@/models/size.model';
 import { ApiError } from '@/utils/api-error';
 import { toObjectId } from '@/utils/object-id';
