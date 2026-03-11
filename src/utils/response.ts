@@ -1,31 +1,14 @@
-import { StatusCodes } from 'http-status-codes';
+import type { Response } from 'express';
 
-import { ApiError } from '@utils/api-error';
+export const sendSuccess = <T>(
+  res: Response,
+  options: { statusCode?: number; message: string; data?: T }
+) => {
+  const { statusCode = 200, message, data } = options;
 
-export const getParam = (value: string | string[] | undefined, fieldName: string) => {
-  if (Array.isArray(value)) {
-    if (value.length > 0 && value[0]) {
-      return value[0];
-    }
-
-    throw new ApiError(StatusCodes.BAD_REQUEST, `Missing ${fieldName}`);
-  }
-
-  if (!value) {
-    throw new ApiError(StatusCodes.BAD_REQUEST, `Missing ${fieldName}`);
-  }
-
-  return value;
-};
-
-export const getOptionalParam = (value: string | string[] | undefined) => {
-  if (Array.isArray(value)) {
-    if (value.length > 0 && value[0]) {
-      return value[0];
-    }
-
-    return undefined;
-  }
-
-  return value;
+  return res.status(statusCode).json({
+    success: true,
+    message,
+    data
+  });
 };

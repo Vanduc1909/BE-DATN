@@ -5,6 +5,7 @@ import type { Types } from 'mongoose';
 import { logger } from '@/config/logger';
 import { connectMongo, disconnectMongo } from '@/config/mongoose';
 import { AddressModel } from '@/models/address.model';
+import { BrandModel } from '@/models/brand.model';
 import { CartModel } from '@/models/cart.model';
 import { CategoryModel } from '@/models/category.model';
 import { ColorModel } from '@/models/color.model';
@@ -29,11 +30,13 @@ import type {
 interface SeedOptions {
   users: number;
   categories: number;
+  brands: number;
   products: number;
   variantsPerProduct: number;
   vouchers: number;
   carts: number;
   orders: number;
+  orderMonthsSpan: number;
   reviews: number;
   clear: boolean;
   seed?: number;
@@ -42,14 +45,60 @@ interface SeedOptions {
 const defaultOptions: SeedOptions = {
   users: 30,
   categories: 8,
+  brands: 12,
   products: 40,
   variantsPerProduct: 4,
   vouchers: 10,
   carts: 20,
-  orders: 25,
-  reviews: 20,
+  orders: 180,
+  orderMonthsSpan: 6,
+  reviews: 80,
   clear: false
 };
+
+const FIXED_SEED_USERS: Array<{
+  email: string;
+  fullName: string;
+  role: Role;
+  staffDepartment?: string;
+}> = [
+  {
+    email: 'admin@gmail.com',
+    fullName: 'Quản trị hệ thống',
+    role: 'admin'
+  },
+  {
+    email: 'buiduc1709@gmail.com',
+    fullName: 'Bùi Đức',
+    role: 'admin'
+  },
+  {
+    email: 'nhanvien@gmail.com',
+    fullName: 'Nhân viên cửa hàng',
+    role: 'staff',
+    staffDepartment: 'Sales'
+  },
+  {
+    email: 'nguyenvanducanh04@gmail.com',
+    fullName: 'Nguyễn Văn Đức Anh',
+    role: 'customer'
+  },
+  {
+    email: 'tutaph41643@fpt.edu.vn',
+    fullName: 'Trần Tú',
+    role: 'customer'
+  },
+  {
+    email: 'huynqph46255@fpt.edu.vn',
+    fullName: 'Quốc Huy',
+    role: 'customer'
+  },
+  {
+    email: 'dungpdph50412@gmail.com',
+    fullName: 'Phạm Dũng',
+    role: 'customer'
+  }
+];
 
 const colorPalette = [
   { name: 'Black', hex: '#111111' },
@@ -62,6 +111,21 @@ const colorPalette = [
   { name: 'Pink', hex: '#D81B60' },
   { name: 'Brown', hex: '#6D4C41' },
   { name: 'Purple', hex: '#8E24AA' }
+] as const;
+
+const featuredBrandNames = [
+  'Predator',
+  'Peri',
+  'Cuetec',
+  'Mezz',
+  'Poison',
+  'Fury',
+  'JFlowers',
+  'Pechauer',
+  'McDermott',
+  'Lucasi',
+  'Balabushka',
+  'Viking'
 ] as const;
 
 const toInteger = (value: string | undefined, fallback: number) => {
@@ -120,6 +184,7 @@ const parseOptions = (): SeedOptions => {
   return {
     users: toInteger(get('users', 'SEED_USERS'), defaultOptions.users),
     categories: toInteger(get('categories', 'SEED_CATEGORIES'), defaultOptions.categories),
+    brands: toInteger(get('brands', 'SEED_BRANDS'), defaultOptions.brands),
     products: toInteger(get('products', 'SEED_PRODUCTS'), defaultOptions.products),
     variantsPerProduct: toInteger(
       get('variantsPerProduct', 'SEED_VARIANTS_PER_PRODUCT'),
@@ -128,6 +193,10 @@ const parseOptions = (): SeedOptions => {
     vouchers: toInteger(get('vouchers', 'SEED_VOUCHERS'), defaultOptions.vouchers),
     carts: toInteger(get('carts', 'SEED_CARTS'), defaultOptions.carts),
     orders: toInteger(get('orders', 'SEED_ORDERS'), defaultOptions.orders),
+    orderMonthsSpan: Math.max(
+      1,
+      toInteger(get('orderMonthsSpan', 'SEED_ORDER_MONTHS_SPAN'), defaultOptions.orderMonthsSpan)
+    ),
     reviews: toInteger(get('reviews', 'SEED_REVIEWS'), defaultOptions.reviews),
     clear: toBoolean(get('clear', 'SEED_CLEAR'), defaultOptions.clear),
     seed: (() => {
@@ -150,22 +219,40 @@ const uniqueSuffix = () => `${Date.now()}-${faker.string.alphanumeric(6).toLower
 
 const randomImage = (seed: string) => `https://picsum.photos/seed/${seed}/1000/1000`;
 
+const dropCollectionIfExists = async (collection: { name: string; drop: () => Promise<unknown> }) => {
+  try {
+    await collection.drop();
+  } catch (error) {
+    const code = (error as { code?: number })?.code;
+    const message = (error as Error).message?.toLowerCase() ?? '';
+
+    // Ignore "NamespaceNotFound" when collection does not exist yet.
+    if (code !== 26 && !message.includes('ns not found')) {
+      throw error;
+    }
+  }
+};
+
 const clearCollections = async () => {
-  await Promise.all([
-    ReviewModel.deleteMany({}),
-    OrderModel.deleteMany({}),
-    CartModel.deleteMany({}),
-    InventoryLogModel.deleteMany({}),
-    ProductVariantModel.collection.drop().catch(() => {}), // drop to remove legacy schema indexes
-    ProductVariantModel.deleteMany({}),
-    ProductModel.deleteMany({}),
-    VoucherModel.deleteMany({}),
-    AddressModel.deleteMany({}),
-    CategoryModel.deleteMany({}),
-    UserModel.deleteMany({}),
-    ColorModel.deleteMany({}),
-    SizeModel.deleteMany({})
-  ]);
+  const collections = [
+    ReviewModel.collection,
+    OrderModel.collection,
+    CartModel.collection,
+    InventoryLogModel.collection,
+    ProductVariantModel.collection,
+    ProductModel.collection,
+    VoucherModel.collection,
+    AddressModel.collection,
+    CategoryModel.collection,
+    BrandModel.collection,
+    UserModel.collection,
+    ColorModel.collection,
+    SizeModel.collection
+  ];
+
+  for (const collection of collections) {
+    await dropCollectionIfExists(collection);
+  }
 };
 
 const seedUsers = async (count: number) => {
@@ -174,18 +261,34 @@ const seedUsers = async (count: number) => {
   }
 
   const defaultPasswordHash = await bcrypt.hash('12345678', 10);
-  const roleCycle: Role[] = ['admin', 'staff', 'customer'];
+  const targetCount = Math.max(count, FIXED_SEED_USERS.length);
+  const roleCycle: Role[] = ['customer', 'staff', 'customer'];
   const tierPool: MembershipTier[] = ['bronze', 'silver', 'gold', 'platinum'];
 
-  const userPayloads = Array.from({ length: count }, (_, index) => {
+  const fixedUserPayloads = FIXED_SEED_USERS.map((account, index) => ({
+    email: account.email,
+    passwordHash: defaultPasswordHash,
+    fullName: account.fullName,
+    phone: faker.phone.number({ style: 'international' }),
+    role: account.role,
+    avatarUrl: randomImage(`fixed-user-${index + 1}`),
+    loyaltyPoints: faker.number.int({ min: 0, max: 10000 }),
+    membershipTier: faker.helpers.arrayElement(tierPool),
+    staffDepartment:
+      account.role !== 'customer'
+        ? (account.staffDepartment ?? faker.commerce.department())
+        : undefined,
+    staffStartDate: account.role !== 'customer' ? faker.date.past() : undefined
+  }));
+
+  const randomUserPayloads = Array.from({ length: targetCount - fixedUserPayloads.length }, (_, index) => {
     const idPart = `${index + 1}-${uniqueSuffix()}`;
     const role = roleCycle[index % roleCycle.length];
 
     return {
-      username: index === 0 ? 'admin' : `user_${idPart}`,
-      email: index === 0 ? 'buiduc1709@gmail.com' : `user_${idPart}@example.com`,
+      email: `user_${idPart}@example.com`,
       passwordHash: defaultPasswordHash,
-      fullName: index === 0 ? 'Admin' : faker.person.fullName(),
+      fullName: faker.person.fullName(),
       phone: faker.phone.number({ style: 'international' }),
       role,
       avatarUrl: randomImage(`user-${idPart}`),
@@ -196,7 +299,7 @@ const seedUsers = async (count: number) => {
     };
   });
 
-  return UserModel.insertMany(userPayloads);
+  return UserModel.insertMany([...fixedUserPayloads, ...randomUserPayloads]);
 };
 
 const seedAddresses = async (userIds: Types.ObjectId[]) => {
@@ -228,15 +331,10 @@ const seedCategories = async (count: number) => {
 
   for (let index = 0; index < count; index += 1) {
     const name = `${faker.commerce.department()} ${index + 1}`;
-    const slug = `${buildSlug(name)}-${uniqueSuffix()}`;
-    const parentCandidate = index > 0 && faker.datatype.boolean() ? categories[0]?._id : undefined;
 
     const created = await CategoryModel.create({
       name,
-      slug,
       description: faker.lorem.sentence(),
-      parentId: parentCandidate,
-      image: randomImage(`category-${slug}`),
       isActive: true
     });
 
@@ -246,7 +344,38 @@ const seedCategories = async (count: number) => {
   return categories;
 };
 
-const seedProducts = async (count: number, categoryIds: Types.ObjectId[]) => {
+const seedBrands = async (count: number) => {
+  if (count === 0) {
+    return [];
+  }
+
+  const brands: Array<{ _id: Types.ObjectId; name: string }> = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const fallbackName = `${faker.company.name()} ${index + 1}`;
+    const name = featuredBrandNames[index] ?? fallbackName;
+
+    const created = await BrandModel.create({
+      name,
+      description: faker.lorem.sentence(),
+      logoUrl: randomImage(`brand-${uniqueSuffix()}`),
+      isActive: true
+    });
+
+    brands.push({
+      _id: created._id as Types.ObjectId,
+      name: created.name
+    });
+  }
+
+  return brands;
+};
+
+const seedProducts = async (
+  count: number,
+  categoryIds: Types.ObjectId[],
+  brands: Array<{ _id: Types.ObjectId; name: string }>
+) => {
   if (count === 0 || categoryIds.length === 0) {
     return [];
   }
@@ -254,20 +383,20 @@ const seedProducts = async (count: number, categoryIds: Types.ObjectId[]) => {
   const payloads = Array.from({ length: count }, (_, index) => {
     const name = faker.commerce.productName();
     const idPart = `${index + 1}-${uniqueSuffix()}`;
+    const assignedBrand = brands.length > 0 ? faker.helpers.arrayElement(brands) : undefined;
 
     return {
       name,
       slug: `${buildSlug(name)}-${idPart}`,
       categoryId: faker.helpers.arrayElement(categoryIds),
+      brandId: assignedBrand?._id,
+      brand: assignedBrand?.name ?? faker.company.name(),
       description: faker.commerce.productDescription(),
       attributes: {
-        brand: faker.company.name(),
         material: faker.commerce.productMaterial()
       },
       images: [randomImage(`product-${idPart}-1`), randomImage(`product-${idPart}-2`)],
       isAvailable: true,
-      metaTitle: `${name} | ${faker.company.name()}`,
-      metaDescription: faker.lorem.sentence(),
       averageRating: 0,
       reviewCount: 0,
       soldCount: 0
@@ -280,7 +409,6 @@ const seedProducts = async (count: number, categoryIds: Types.ObjectId[]) => {
 const seedColors = async () => {
   const payloads = colorPalette.map((color) => ({
     name: color.name,
-    slug: buildSlug(color.name),
     hexCode: color.hex,
     isActive: true
   }));
@@ -291,7 +419,6 @@ const seedSizes = async () => {
   const sizes = ['S', 'M', 'L', 'XL', 'XXL', 'Standard'];
   const payloads = sizes.map((size) => ({
     name: size,
-    slug: buildSlug(size),
     isActive: true
   }));
   return SizeModel.insertMany(payloads);
@@ -387,6 +514,7 @@ const seedVouchers = async (count: number) => {
       'percentage',
       'fixed_amount'
     ]);
+    const usageLimit = faker.number.int({ min: 20, max: 500 });
 
     return {
       code: `SALE-${faker.string.alphanumeric(8).toUpperCase()}`,
@@ -401,7 +529,8 @@ const seedVouchers = async (count: number) => {
         discountType === 'percentage' ? faker.number.int({ min: 30000, max: 300000 }) : undefined,
       startDate: faker.date.recent({ days: 10 }),
       expirationDate: faker.date.soon({ days: 45 }),
-      usageLimit: faker.number.int({ min: 20, max: 500 }),
+      usageLimit,
+      maxUsagePerUser: faker.number.int({ min: 1, max: usageLimit - 1 }),
       usedCount: faker.number.int({ min: 0, max: 10 }),
       isActive: true
     };
@@ -446,6 +575,165 @@ const seedCarts = async (
 };
 
 const toTwoDecimals = (value: number) => Math.round(value * 100) / 100;
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+const weightedPick = <T>(pool: Array<{ value: T; weight: number }>): T => {
+  const totalWeight = pool.reduce((sum, item) => sum + item.weight, 0);
+
+  if (totalWeight <= 0) {
+    return pool[0].value;
+  }
+
+  let threshold = faker.number.int({ min: 1, max: totalWeight });
+
+  for (const item of pool) {
+    threshold -= item.weight;
+
+    if (threshold <= 0) {
+      return item.value;
+    }
+  }
+
+  return pool[pool.length - 1].value;
+};
+
+const pickOrderStatusByAge = (ageDays: number): OrderStatus => {
+  if (ageDays >= 90) {
+    return weightedPick<OrderStatus>([
+      { value: 'delivered', weight: 64 },
+      { value: 'cancelled', weight: 14 },
+      { value: 'returned', weight: 8 },
+      { value: 'shipping', weight: 6 },
+      { value: 'preparing', weight: 4 },
+      { value: 'confirmed', weight: 3 },
+      { value: 'pending', weight: 1 }
+    ]);
+  }
+
+  if (ageDays >= 45) {
+    return weightedPick<OrderStatus>([
+      { value: 'delivered', weight: 48 },
+      { value: 'shipping', weight: 14 },
+      { value: 'preparing', weight: 12 },
+      { value: 'confirmed', weight: 9 },
+      { value: 'pending', weight: 7 },
+      { value: 'cancelled', weight: 7 },
+      { value: 'returned', weight: 3 }
+    ]);
+  }
+
+  if (ageDays >= 15) {
+    return weightedPick<OrderStatus>([
+      { value: 'shipping', weight: 23 },
+      { value: 'preparing', weight: 20 },
+      { value: 'confirmed', weight: 18 },
+      { value: 'pending', weight: 16 },
+      { value: 'delivered', weight: 15 },
+      { value: 'cancelled', weight: 6 },
+      { value: 'returned', weight: 2 }
+    ]);
+  }
+
+  return weightedPick<OrderStatus>([
+    { value: 'pending', weight: 33 },
+    { value: 'confirmed', weight: 25 },
+    { value: 'preparing', weight: 20 },
+    { value: 'shipping', weight: 12 },
+    { value: 'delivered', weight: 7 },
+    { value: 'cancelled', weight: 3 }
+  ]);
+};
+
+const buildOrderTimeline = (status: OrderStatus): OrderStatus[] => {
+  switch (status) {
+    case 'pending':
+      return ['pending'];
+    case 'confirmed':
+      return ['pending', 'confirmed'];
+    case 'preparing':
+      return ['pending', 'confirmed', 'preparing'];
+    case 'shipping':
+      return ['pending', 'confirmed', 'preparing', 'shipping'];
+    case 'delivered':
+      return ['pending', 'confirmed', 'preparing', 'shipping', 'delivered'];
+    case 'cancelled':
+      return faker.datatype.boolean()
+        ? ['pending', 'cancelled']
+        : ['pending', 'confirmed', 'cancelled'];
+    case 'returned':
+      return ['pending', 'confirmed', 'preparing', 'shipping', 'delivered', 'returned'];
+    default:
+      return ['pending'];
+  }
+};
+
+const buildStatusHistory = (
+  status: OrderStatus,
+  userId: Types.ObjectId,
+  createdAt: Date,
+  finalStatusAt: Date
+) => {
+  const timeline = buildOrderTimeline(status);
+
+  if (timeline.length === 1) {
+    return [
+      {
+        status: timeline[0],
+        changedBy: userId,
+        note: 'Đơn hàng được tạo từ seed',
+        changedAt: createdAt
+      }
+    ];
+  }
+
+  const totalMs = Math.max(MINUTE_MS, finalStatusAt.getTime() - createdAt.getTime());
+
+  return timeline.map((timelineStatus, index) => {
+    if (index === 0) {
+      return {
+        status: timelineStatus,
+        changedBy: userId,
+        note: 'Đơn hàng được tạo từ seed',
+        changedAt: createdAt
+      };
+    }
+
+    const ratio = index / (timeline.length - 1);
+
+    return {
+      status: timelineStatus,
+      changedBy: userId,
+      note: `Cập nhật trạng thái: ${timelineStatus}`,
+      changedAt: new Date(createdAt.getTime() + Math.round(totalMs * ratio))
+    };
+  });
+};
+
+const resolvePaymentStatus = (status: OrderStatus, paymentMethod: PaymentMethod): PaymentStatus => {
+  if (status === 'delivered') {
+    return 'paid';
+  }
+
+  if (status === 'returned') {
+    return 'refunded';
+  }
+
+  if (status === 'cancelled') {
+    if (paymentMethod === 'cod') {
+      return 'failed';
+    }
+
+    return faker.helpers.arrayElement<PaymentStatus>(['failed', 'refunded']);
+  }
+
+  if (paymentMethod !== 'cod' && faker.number.int({ min: 1, max: 10 }) <= 2) {
+    return 'paid';
+  }
+
+  return 'pending';
+};
 
 const seedOrders = async (
   count: number,
@@ -459,24 +747,70 @@ const seedOrders = async (
     images: string[];
   }>,
   productNameById: Map<string, string>,
-  vouchers: Array<{ _id: Types.ObjectId }> = []
+  vouchers: Array<{ _id: Types.ObjectId }> = [],
+  orderMonthsSpan = 6
 ) => {
   if (count === 0 || customerIds.length === 0 || variants.length === 0) {
     return [];
   }
 
-  const statuses: OrderStatus[] = [
-    'pending',
-    'confirmed',
-    'preparing',
-    'shipping',
-    'delivered',
-    'cancelled'
-  ];
   const paymentMethods: PaymentMethod[] = ['cod', 'banking', 'momo', 'vnpay'];
+  const now = new Date();
+  const normalizedMonthSpan = Math.max(1, orderMonthsSpan);
+  const latestCreatedAt = new Date(now.getTime() - 2 * HOUR_MS);
+  const orderCodeSeed = Date.now();
 
   const ordersPayload = Array.from({ length: count }, (_, index) => {
+    const monthOffset = index % normalizedMonthSpan;
+    const monthCursor = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1, 0, 0, 0, 0);
+    const monthStart = new Date(monthCursor);
+    const monthEnd = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0, 23, 59, 0, 0);
+    const createdTo = monthOffset === 0 ? latestCreatedAt : monthEnd;
+    const createdFrom = monthStart;
+    const createdAt = faker.date.between({
+      from: createdFrom,
+      to: createdTo.getTime() > createdFrom.getTime() ? createdTo : createdFrom
+    });
     const userId = faker.helpers.arrayElement(customerIds);
+    const ageDays = Math.max(0, Math.floor((now.getTime() - createdAt.getTime()) / DAY_MS));
+    const status = pickOrderStatusByAge(ageDays);
+    const paymentMethod = faker.helpers.arrayElement(paymentMethods);
+    const paymentStatus = resolvePaymentStatus(status, paymentMethod);
+    const maxProgressMinutes = Math.max(
+      1,
+      Math.floor((now.getTime() - createdAt.getTime()) / MINUTE_MS)
+    );
+    const expectedProgressMinutes: Record<OrderStatus, number> = {
+      pending: 0,
+      confirmed: 6 * 60,
+      preparing: 20 * 60,
+      shipping: 48 * 60,
+      delivered: 6 * 24 * 60,
+      cancelled: 2 * 24 * 60,
+      returned: 10 * 24 * 60
+    };
+    const finalOffsetMinutes =
+      status === 'pending'
+        ? 0
+        : faker.number.int({
+            min: 1,
+            max: Math.max(1, Math.min(maxProgressMinutes, expectedProgressMinutes[status]))
+          });
+    const finalStatusAt = new Date(
+      Math.min(createdAt.getTime() + finalOffsetMinutes * MINUTE_MS, now.getTime())
+    );
+    const statusHistory = buildStatusHistory(status, userId, createdAt, finalStatusAt);
+    const updatedAt = statusHistory.at(-1)?.changedAt ?? createdAt;
+    const deliveredStatusAt =
+      [...statusHistory].reverse().find((history) => history.status === 'delivered')?.changedAt ??
+      undefined;
+    const paidAt = paymentStatus === 'paid' ? deliveredStatusAt ?? updatedAt : undefined;
+    const refundedAt = paymentStatus === 'refunded' ? updatedAt : undefined;
+    const paymentTxnRef =
+      paymentMethod !== 'cod' && paymentStatus !== 'pending'
+        ? `TXN-${orderCodeSeed}-${index + 1}`
+        : undefined;
+
     const lineItems = faker.helpers.arrayElements(
       variants,
       faker.number.int({ min: 1, max: Math.min(3, variants.length) })
@@ -503,11 +837,9 @@ const seedOrders = async (
     const shippingFee = faker.number.int({ min: 0, max: 50000 });
     const discountAmount = faker.datatype.boolean() ? faker.number.int({ min: 0, max: 50000 }) : 0;
     const totalAmount = Math.max(toTwoDecimals(subtotal + shippingFee - discountAmount), 0);
-    const status = faker.helpers.arrayElement(statuses);
-    const paymentStatus: PaymentStatus = status === 'delivered' ? 'paid' : 'pending';
 
     return {
-      orderCode: `ORD-${Date.now()}-${index + 1}-${faker.number.int({ min: 1000, max: 9999 })}`,
+      orderCode: `ORD-${orderCodeSeed}-${index + 1}-${faker.number.int({ min: 1000, max: 9999 })}`,
       userId,
       shippingRecipientName: faker.person.fullName(),
       shippingPhone: faker.phone.number({ style: 'international' }),
@@ -516,32 +848,28 @@ const seedOrders = async (
       shippingFee,
       discountAmount,
       totalAmount,
-      paymentMethod: faker.helpers.arrayElement(paymentMethods),
+      paymentMethod,
       paymentStatus,
+      paymentTxnRef,
+      paymentTransactionNo:
+        paymentTxnRef && paymentStatus !== 'pending' ? faker.string.numeric(12) : undefined,
+      paymentGatewayResponseCode:
+        paymentTxnRef && paymentStatus === 'paid'
+          ? '00'
+          : paymentTxnRef
+            ? faker.helpers.arrayElement(['01', '24', '99'])
+            : undefined,
+      paidAt,
+      refundedAt,
       voucherId:
-        vouchers.length > 0 && faker.datatype.boolean()
+        vouchers.length > 0 && discountAmount > 0 && faker.datatype.boolean()
           ? faker.helpers.arrayElement(vouchers)._id
           : undefined,
       status,
       items,
-      statusHistory: [
-        {
-          status: 'pending' as OrderStatus,
-          changedBy: userId,
-          note: 'Order created by faker seed',
-          changedAt: faker.date.recent({ days: 5 })
-        },
-        ...(status !== 'pending'
-          ? [
-              {
-                status,
-                changedBy: userId,
-                note: 'Order progressed by faker seed',
-                changedAt: faker.date.recent({ days: 2 })
-              }
-            ]
-          : [])
-      ]
+      statusHistory,
+      createdAt,
+      updatedAt
     };
   });
 
@@ -678,15 +1006,25 @@ const main = async () => {
   await seedAddresses(customerUsers.map((user) => user._id as Types.ObjectId));
 
   let categories = await seedCategories(options.categories);
+  let brands = await seedBrands(options.brands);
 
   if (categories.length === 0 && options.products > 0) {
     const fallback = await seedCategories(1);
     categories = fallback;
   }
 
+  if (brands.length === 0 && options.products > 0) {
+    const fallback = await seedBrands(1);
+    brands = fallback;
+  }
+
   const products = await seedProducts(
     options.products,
-    categories.map((category) => category._id)
+    categories.map((category) => category._id),
+    brands.map((brand) => ({
+      _id: brand._id,
+      name: brand.name
+    }))
   );
 
   const [colors, sizes] = await Promise.all([seedColors(), seedSizes()]);
@@ -736,7 +1074,8 @@ const main = async () => {
       images: variant.images as string[]
     })),
     productNameById,
-    vouchers.map((voucher) => ({ _id: voucher._id as Types.ObjectId }))
+    vouchers.map((voucher) => ({ _id: voucher._id as Types.ObjectId })),
+    options.orderMonthsSpan
   );
 
   await seedReviews(
@@ -758,6 +1097,7 @@ const main = async () => {
       {
         users: users.length,
         categories: categories.length,
+        brands: brands.length,
         products: products.length,
         variants: variants.length,
         vouchers: vouchers.length,

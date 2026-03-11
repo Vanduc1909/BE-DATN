@@ -3,7 +3,6 @@ import { Schema, model } from 'mongoose';
 import type { MembershipTier, Role } from '@/types/domain';
 
 export interface UserDocument {
-  username?: string;
   email: string;
   passwordHash: string;
   isActive: boolean;
@@ -21,13 +20,6 @@ export interface UserDocument {
 
 const userSchema = new Schema<UserDocument>(
   {
-    username: {
-      type: String,
-      trim: true,
-      lowercase: true,
-      unique: true,
-      sparse: true
-    },
     email: {
       type: String,
       required: true,
@@ -84,6 +76,5 @@ const userSchema = new Schema<UserDocument>(
 );
 
 userSchema.index({ email: 1 }, { unique: true });
-userSchema.index({ username: 1 }, { unique: true, sparse: true });
 
 export const UserModel = model<UserDocument>('User', userSchema);

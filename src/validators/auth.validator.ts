@@ -6,7 +6,6 @@ export const registerSchema = z.object({
   body: z.object({
     email: z.string().email(),
     password: passwordSchema,
-    username: z.string().min(3).max(50).optional(),
     fullName: z.string().min(1).max(120).optional(),
     phone: z.string().min(8).max(20).optional()
   })
@@ -49,13 +48,12 @@ export const logoutSchema = z.object({
 export const updateMeSchema = z.object({
   body: z
     .object({
-      username: z.string().min(3).max(50).optional(),
       fullName: z.string().min(1).max(120).optional(),
       phone: z.string().min(8).max(20).optional(),
       avatarUrl: z.string().url().optional()
     })
     .refine((value) => Object.keys(value).length > 0, {
-      message: 'At least one field must be provided'
+      message: 'At least one field is required'
     })
 });
 

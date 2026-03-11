@@ -1,4 +1,4 @@
-import { model, Schema, type Types } from 'mongoose';
+import { Schema, model, type Types } from 'mongoose';
 
 export interface ProductVariantDocument {
   productId: Types.ObjectId;
@@ -11,8 +11,8 @@ export interface ProductVariantDocument {
   stockQuantity: number;
   isAvailable: boolean;
   images: string[];
-  createAt: Date;
-  updateAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const productVariantSchema = new Schema<ProductVariantDocument>(
@@ -28,7 +28,9 @@ const productVariantSchema = new Schema<ProductVariantDocument>(
     isAvailable: { type: Boolean, default: true },
     images: [{ type: String }]
   },
-  { timestamps: true }
+  {
+    timestamps: true
+  }
 );
 
 productVariantSchema.index({ sku: 1 }, { unique: true });
