@@ -206,15 +206,6 @@ const parseOptions = (): SeedOptions => {
   };
 };
 
-const buildSlug = (value: string) => {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-');
-};
-
 const uniqueSuffix = () => `${Date.now()}-${faker.string.alphanumeric(6).toLowerCase()}`;
 
 const randomImage = (seed: string) => `https://picsum.photos/seed/${seed}/1000/1000`;
@@ -387,7 +378,6 @@ const seedProducts = async (
 
     return {
       name,
-      slug: `${buildSlug(name)}-${idPart}`,
       categoryId: faker.helpers.arrayElement(categoryIds),
       brandId: assignedBrand?._id,
       brand: assignedBrand?.name ?? faker.company.name(),

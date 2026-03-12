@@ -1,7 +1,5 @@
 import { randomBytes } from 'node:crypto';
 
-import { StatusCodes } from 'http-status-codes';
-import type { Types } from 'mongoose';
 
 import { BrandModel } from '@models/brand.model';
 import { CategoryModel } from '@models/category.model';
@@ -12,10 +10,11 @@ import { SizeModel } from '@models/size.model';
 import { ApiError } from '@utils/api-error';
 import { toObjectId } from '@utils/object-id';
 import { toPaginatedData } from '@utils/pagination';
+import { StatusCodes } from 'http-status-codes';
+import type { Types } from 'mongoose';
 
 interface ProductPayload {
   name: string;
-  slug: string;
   categoryId: string;
   brandId?: string;
   brand?: string;
@@ -326,7 +325,7 @@ export const listProducts = async (options: {
 
   if (options.search?.trim()) {
     const regex = new RegExp(options.search.trim(), 'i');
-    filters.$or = [{ name: regex }, { slug: regex }];
+    filters.$or = [{ name: regex }, { brand: regex }];
   }
 
   const totalItems = await ProductModel.countDocuments(filters);
@@ -451,7 +450,6 @@ export const createProduct = async (payload: ProductPayload) => {
 
   const created = await ProductModel.create({
     name: payload.name,
-    slug: payload.slug,
     categoryId: toObjectId(payload.categoryId, 'categoryId'),
     brandId: brandInput.brandId,
     brand: brandInput.brand,
@@ -472,10 +470,6 @@ export const updateProduct = async (productId: string, payload: Partial<ProductP
 
   if (payload.name !== undefined) {
     updateData.name = payload.name;
-  }
-
-  if (payload.slug !== undefined) {
-    updateData.slug = payload.slug;
   }
 
   if (payload.description !== undefined) {

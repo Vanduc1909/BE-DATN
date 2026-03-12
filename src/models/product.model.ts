@@ -35,6 +35,7 @@ const productSchema = new Schema<ProductDocument>(
   }
 );
 
+
 productSchema.index({ categoryId: 1, isAvailable: 1 });
 productSchema.index({ brandId: 1, isAvailable: 1 });
 productSchema.index({ brand: 1, isAvailable: 1 });

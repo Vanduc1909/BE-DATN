@@ -30,7 +30,6 @@ export const createProductSchema = z.object({
   body: z
     .object({
       name: z.string().min(1).max(255),
-      slug: z.string().min(1).max(255),
       categoryId: z.string().min(1),
       brandId: z.string().min(1).optional(),
       brand: z.string().min(1).max(120).optional(),
@@ -52,7 +51,6 @@ export const updateProductSchema = z.object({
   body: z
     .object({
       name: z.string().min(1).max(255).optional(),
-      slug: z.string().min(1).max(255).optional(),
       categoryId: z.string().min(1).optional(),
       brandId: z.string().min(1).optional(),
       brand: z.string().min(1).max(120).optional(),
