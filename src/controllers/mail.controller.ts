@@ -1,9 +1,9 @@
+import { sendMail } from '@/services/mail.service';
+import { ApiError } from '@/utils/api-error';
+import { asyncHandler } from '@/utils/async-handler';
+import { sendSuccess } from '@/utils/response';
 import { StatusCodes } from 'http-status-codes';
-
-import { sendMail } from '@services/mail.service';
-import { ApiError } from '@utils/api-error';
-import { asyncHandler } from '@utils/async-handler';
-import { sendSuccess } from '@utils/response';
+import { da } from 'zod/v4/locales';
 
 export const sendTestMailController = asyncHandler(async (req, res) => {
   const recipient = req.body?.to ?? req.user?.email;

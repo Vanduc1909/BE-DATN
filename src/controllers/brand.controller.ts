@@ -1,15 +1,14 @@
-import { StatusCodes } from 'http-status-codes';
-
 import {
   createBrand,
   deleteBrand,
   getBrandById,
   listBrands,
   updateBrand
-} from '@services/brand.service';
-import { asyncHandler } from '@utils/async-handler';
-import { getParam } from '@utils/request';
-import { sendSuccess } from '@utils/response';
+} from '@/services/brand.service';
+import { asyncHandler } from '@/utils/async-handler';
+import { sendSuccess } from '@/utils/response';
+import e from 'express';
+import { StatusCodes } from 'http-status-codes';
 
 export const listBrandsController = asyncHandler(async (req, res) => {
   const data = await listBrands({
@@ -42,7 +41,7 @@ export const createBrandController = asyncHandler(async (req, res) => {
 
   return sendSuccess(res, {
     statusCode: StatusCodes.CREATED,
-    message: 'Create brand successfully',
+    message: 'Brand created successfully',
     data
   });
 });
@@ -51,7 +50,7 @@ export const updateBrandController = asyncHandler(async (req, res) => {
   const data = await updateBrand(getParam(req.params.brandId, 'brandId'), req.body);
 
   return sendSuccess(res, {
-    message: 'Update brand successfully',
+    message: 'Brand updated successfully',
     data
   });
 });
@@ -60,7 +59,7 @@ export const deleteBrandController = asyncHandler(async (req, res) => {
   const data = await deleteBrand(getParam(req.params.brandId, 'brandId'));
 
   return sendSuccess(res, {
-    message: 'Delete brand successfully',
+    message: 'Brand deleted successfully',
     data
   });
 });

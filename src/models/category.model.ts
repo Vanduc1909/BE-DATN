@@ -1,8 +1,12 @@
+import type { Types } from 'mongoose';
 import { Schema, model } from 'mongoose';
 
 export interface CategoryDocument {
   name: string;
+  slug: string;
   description?: string;
+  parentId?: Types.ObjectId;
+  image?: string;
   isActive: boolean;
 }
 
@@ -13,7 +17,21 @@ const categorySchema = new Schema<CategoryDocument>(
       required: true,
       trim: true
     },
+    slug: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      lowercase: true
+    },
     description: {
+      type: String
+    },
+    parentId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Category'
+    },
+    image: {
       type: String
     },
     isActive: {
@@ -26,6 +44,6 @@ const categorySchema = new Schema<CategoryDocument>(
   }
 );
 
-categorySchema.index({ name: 1 });
+categorySchema.index({ slug: 1 }, { unique: true });
 
 export const CategoryModel = model<CategoryDocument>('Category', categorySchema);

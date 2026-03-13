@@ -1,24 +1,21 @@
-import { StatusCodes } from 'http-status-codes';
-
 import {
   createProduct,
   createProductVariant,
   deleteProduct,
   deleteProductVariant,
   getProductById,
-  listProductFilters,
   listNewestProducts,
-  listProductVariants,
+  listProductFilters,
   listProducts,
+  listProductVariants,
   listTopSellingProducts,
   updateProduct,
   updateProductVariant
-} from '@services/product.service';
-import { asyncHandler } from '@utils/async-handler';
-import { getParam } from '@utils/request';
-import { sendSuccess } from '@utils/response';
+} from '@/services/product.service';
+import { asyncHandler } from '@/utils/async-handler';
+import { sendSuccess } from '@/utils/response';
+import { StatusCodes } from 'http-status-codes';
 
-// worklog: 2026-03-04 11:11:06 | vanduc | refactor | parseFeaturedLimit
 const parseFeaturedLimit = (rawLimit: unknown) => {
   const parsedLimit = Number.parseInt(String(rawLimit ?? '10'), 10);
 

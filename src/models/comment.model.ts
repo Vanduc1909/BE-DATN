@@ -1,5 +1,4 @@
-import type { Types } from 'mongoose';
-import { Schema, model } from 'mongoose';
+import { Schema, Types, model } from 'mongoose';
 
 import type { CommentTargetModel } from '@/types/domain';
 
@@ -16,7 +15,7 @@ export interface CommentDocument {
 const commentSchema = new Schema<CommentDocument>(
   {
     targetId: { type: Schema.Types.ObjectId, required: true },
-    targetModel: { type: String, enum: ['product'], required: true },
+    targetModel: { type: String, enum: ['product', 'lesson'], required: true },
     userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     content: { type: String, required: true },
     parentId: { type: Schema.Types.ObjectId, ref: 'Comment' },

@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-const featuredLimitSchema = z.string().regex(/^\d+$/).optional();
+const featureLimitSchema = z.string().regex(/^\d+$/).optional();
 
-export const listProductsSchema = z.object({
+export const listProductSchema = z.object({
   query: z.object({
     page: z.string().optional(),
     limit: z.string().optional(),
@@ -16,7 +16,7 @@ export const listProductsSchema = z.object({
 
 export const featuredProductsSchema = z.object({
   query: z.object({
-    limit: featuredLimitSchema
+    limit: featureLimitSchema
   })
 });
 
@@ -30,13 +30,16 @@ export const createProductSchema = z.object({
   body: z
     .object({
       name: z.string().min(1).max(255),
+      slug: z.string().min(1).max(255),
       categoryId: z.string().min(1),
       brandId: z.string().min(1).optional(),
       brand: z.string().min(1).max(120).optional(),
       description: z.string().optional(),
       attributes: z.record(z.string(), z.unknown()).optional(),
       images: z.array(z.string()).optional(),
-      isAvailable: z.boolean().optional()
+      isAvailable: z.boolean().optional(),
+      metaTitle: z.string().optional(),
+      metaDescription: z.string().optional()
     })
     .refine((value) => Boolean(value.brandId || value.brand), {
       message: 'brandId or brand is required',
@@ -51,13 +54,16 @@ export const updateProductSchema = z.object({
   body: z
     .object({
       name: z.string().min(1).max(255).optional(),
+      slug: z.string().min(1).max(255).optional(),
       categoryId: z.string().min(1).optional(),
       brandId: z.string().min(1).optional(),
       brand: z.string().min(1).max(120).optional(),
       description: z.string().optional(),
       attributes: z.record(z.string(), z.unknown()).optional(),
       images: z.array(z.string()).optional(),
-      isAvailable: z.boolean().optional()
+      isAvailable: z.boolean().optional(),
+      metaTitle: z.string().optional(),
+      metaDescription: z.string().optional()
     })
     .refine((value) => Object.keys(value).length > 0, {
       message: 'At least one field is required'
@@ -86,7 +92,7 @@ export const createVariantSchema = z.object({
     productId: z.string().min(1)
   }),
   body: z.object({
-    sku: z.string().min(1).max(100).optional(),
+    sku: z.string().min(1).max(100),
     colorId: z.string().min(1).optional(),
     sizeId: z.string().min(1).optional(),
     size: z.string().min(1).max(50).optional(),

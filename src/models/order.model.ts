@@ -1,13 +1,11 @@
-import { Schema, model, type Types } from 'mongoose';
+import { Schema, Types, model } from 'mongoose';
 
 import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/domain';
 
 export interface OrderItemSnapshot {
   productId: Types.ObjectId;
   productName: string;
-  variantId: Types.ObjectId;
-  variantSku: string;
-  variantColor: string;
+  productSku: string;
   productImage?: string;
   quantity: number;
   price: number;
@@ -33,11 +31,6 @@ export interface OrderDocument {
   totalAmount: number;
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
-  paymentTxnRef?: string;
-  paymentTransactionNo?: string;
-  paymentGatewayResponseCode?: string;
-  paidAt?: Date;
-  refundedAt?: Date;
   voucherId?: Types.ObjectId;
   status: OrderStatus;
   items: OrderItemSnapshot[];
@@ -50,9 +43,7 @@ const orderItemSchema = new Schema<OrderItemSnapshot>(
   {
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
     productName: { type: String, required: true },
-    variantId: { type: Schema.Types.ObjectId, ref: 'ProductVariant', required: true },
-    variantSku: { type: String, required: true },
-    variantColor: { type: String, required: true },
+    productSku: { type: String, required: true },
     productImage: { type: String },
     quantity: { type: Number, required: true, min: 1 },
     price: { type: Number, required: true, min: 0 },
@@ -92,11 +83,6 @@ const orderSchema = new Schema<OrderDocument>(
       enum: ['pending', 'paid', 'failed', 'refunded'],
       default: 'pending'
     },
-    paymentTxnRef: { type: String, trim: true, uppercase: true },
-    paymentTransactionNo: { type: String, trim: true },
-    paymentGatewayResponseCode: { type: String, trim: true },
-    paidAt: { type: Date },
-    refundedAt: { type: Date },
     voucherId: { type: Schema.Types.ObjectId, ref: 'Voucher' },
     status: {
       type: String,
@@ -110,7 +96,6 @@ const orderSchema = new Schema<OrderDocument>(
 );
 
 orderSchema.index({ orderCode: 1 }, { unique: true });
-orderSchema.index({ paymentTxnRef: 1 }, { unique: true, sparse: true });
 orderSchema.index({ userId: 1, createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 

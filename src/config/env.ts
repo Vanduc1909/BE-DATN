@@ -37,10 +37,7 @@ const envSchema = z.object({
   SMTP_SECURE: z.string().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
-  SMTP_FROM: z.string().optional(),
-  WEB_PUSH_SUBJECT: z.string().optional(),
-  WEB_PUSH_PUBLIC_KEY: z.string().optional(),
-  WEB_PUSH_PRIVATE_KEY: z.string().optional(),
+   SMTP_FROM: z.string().optional(),
 
   FRONTEND_URL: z.string().default('http://localhost:3000'),
 

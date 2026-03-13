@@ -19,6 +19,6 @@ export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 
 export type InventoryReason = 'import' | 'sale' | 'return' | 'adjustment' | 'damage';
 
-export type CommentTargetModel = 'product';
+export type CommentTargetModel = 'product' | 'lesson';
 
 export type EmployeeProgressStatus = 'enrolled' | 'in_progress' | 'completed';

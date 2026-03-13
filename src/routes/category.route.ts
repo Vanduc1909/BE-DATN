@@ -1,5 +1,4 @@
-import {
-  createCategoryController,
+createCategoryController,
   deleteCategoryController,
   getCategoryByIdController,
   listCategoriesController,

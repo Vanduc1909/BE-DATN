@@ -18,6 +18,7 @@ export const sizeIdParamSchema = z.object({
 export const createSizeSchema = z.object({
   body: z.object({
     name: z.string().min(1).max(80),
+    slug: z.string().min(1).max(120),
     isActive: z.boolean().optional()
   })
 });
@@ -29,6 +30,7 @@ export const updateSizeSchema = z.object({
   body: z
     .object({
       name: z.string().min(1).max(80).optional(),
+      slug: z.string().min(1).max(120).optional(),
       isActive: z.boolean().optional()
     })
     .refine((value) => Object.keys(value).length > 0, {

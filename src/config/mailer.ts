@@ -2,7 +2,6 @@ import nodemailer from 'nodemailer';
 
 import { env } from '@config/env';
 import { logger } from '@config/logger';
-
 const normalizedSmtpUser = env.SMTP_USER?.trim();
 const normalizedSmtpPass = env.SMTP_PASS?.replace(/\s+/g, '');
 const normalizedSmtpService = env.SMTP_SERVICE?.trim().toLowerCase();
@@ -17,13 +16,14 @@ const smtpHost = smtpHostFromEnv || (shouldUseGmailDefaults ? 'smtp.gmail.com' :
 const smtpPort = env.SMTP_PORT ?? (shouldUseGmailDefaults ? 465 : undefined);
 const smtpSecure = env.SMTP_SECURE ? env.SMTP_SECURE === 'true' : smtpPort === 465;
 
+
 const mailerConfigured = Boolean(
-  normalizedSmtpUser && normalizedSmtpPass && ((smtpService && smtpService.length > 0) || smtpHost)
+    normalizedSmtpUser && normalizedSmtpPass && ((smtpService && smtpService.length > 0) || smtpHost)
 );
 
 const mailTransporter = mailerConfigured
   ? nodemailer.createTransport({
-      ...(smtpService ? { service: smtpService } : { host: smtpHost, port: smtpPort }),
+       ...(smtpService ? { service: smtpService } : { host: smtpHost, port: smtpPort }),
       secure: smtpSecure,
       auth: {
         user: normalizedSmtpUser,
@@ -40,7 +40,7 @@ export const verifyMailer = async () => {
 
   try {
     await mailTransporter.verify();
-    logger.info(
+     logger.info(
       `Nodemailer connected (${smtpService ? `service=${smtpService}` : `host=${smtpHost}:${String(
         smtpPort ?? ''
       )}`}, secure=${String(smtpSecure)})`
