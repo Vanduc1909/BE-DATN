@@ -140,3 +140,4 @@ vite.config.ts.timestamp-*
 
 .agent
 *.sh
+.DS_Store

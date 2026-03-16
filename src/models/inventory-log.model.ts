@@ -1,10 +1,10 @@
-import { Schema, type Types, model } from 'mongoose';
+import { Schema, Types, model } from 'mongoose';
 
 import type { InventoryReason } from '@/types/domain';
 
 export interface InventoryLogDocument {
   productId: Types.ObjectId;
-  variantId?: Types.ObjectId;
+  variantSku?: string;
   changeAmount: number;
   reason: InventoryReason;
   performedBy: Types.ObjectId;
@@ -15,7 +15,7 @@ export interface InventoryLogDocument {
 const inventoryLogSchema = new Schema<InventoryLogDocument>(
   {
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
-    variantId: { type: Schema.Types.ObjectId, ref: 'ProductVariant' },
+    variantSku: { type: String, trim: true },
     changeAmount: { type: Number, required: true },
     reason: {
       type: String,

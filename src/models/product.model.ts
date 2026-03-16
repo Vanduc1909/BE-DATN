@@ -1,14 +1,16 @@
-import { Schema, type Types, model } from 'mongoose';
+import { Schema, Types, model } from 'mongoose';
 
 export interface ProductDocument {
   name: string;
   slug: string;
+  sku: string;
   categoryId: Types.ObjectId;
-  brandId?: Types.ObjectId;
-  brand: string;
+  price: number;
+  originalPrice?: number;
   description?: string;
   attributes?: Record<string, unknown>;
   images: string[];
+  stockQuantity: number;
   isAvailable: boolean;
   metaTitle?: string;
   metaDescription?: string;
@@ -23,12 +25,14 @@ const productSchema = new Schema<ProductDocument>(
   {
     name: { type: String, required: true, trim: true },
     slug: { type: String, required: true, unique: true, trim: true, lowercase: true },
+    sku: { type: String, required: true, unique: true, trim: true, uppercase: true },
     categoryId: { type: Schema.Types.ObjectId, ref: 'Category', required: true },
-    brandId: { type: Schema.Types.ObjectId, ref: 'Brand' },
-    brand: { type: String, required: true, trim: true, default: 'Generic' },
+    price: { type: Number, required: true, min: 0 },
+    originalPrice: { type: Number, min: 0 },
     description: { type: String },
     attributes: { type: Schema.Types.Mixed },
     images: [{ type: String }],
+    stockQuantity: { type: Number, default: 0, min: 0 },
     isAvailable: { type: Boolean, default: true },
     metaTitle: { type: String },
     metaDescription: { type: String },
@@ -42,8 +46,7 @@ const productSchema = new Schema<ProductDocument>(
 );
 
 productSchema.index({ slug: 1 }, { unique: true });
+productSchema.index({ sku: 1 }, { unique: true });
 productSchema.index({ categoryId: 1, isAvailable: 1 });
-productSchema.index({ brandId: 1, isAvailable: 1 });
-productSchema.index({ brand: 1, isAvailable: 1 });
 
 export const ProductModel = model<ProductDocument>('Product', productSchema);

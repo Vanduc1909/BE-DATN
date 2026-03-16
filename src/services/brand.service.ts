@@ -142,7 +142,7 @@ export const updateBrand = async (brandId: string, payload: Partial<BrandPayload
 
 export const deleteBrand = async (brandId: string) => {
   const _brandId = toObjectId(brandId, 'brandId');
-  const existInProduct = await ProductModel.exists({ brandId: _brandId });
+  const existInProduct = await ProductModel.exists({ brand: _brandId });
 
   if (existInProduct) {
     throw new ApiError(
