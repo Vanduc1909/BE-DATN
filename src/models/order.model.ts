@@ -1,4 +1,4 @@
-import { Schema, Types, model } from 'mongoose';
+import { Schema, type Types, model } from 'mongoose';
 
 import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/domain';
 
