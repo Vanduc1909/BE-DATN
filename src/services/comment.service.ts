@@ -1,0 +1,351 @@
+import { CommentModel } from '@/models/comment.model';
+import { LessonModel } from '@/models/lesson.model';
+import { ProductModel } from '@/models/product.model';
+import { CommentTargetModel, Role } from '@/types/domain';
+import { ApiError } from '@/utils/api-error';
+import { toObjectId } from '@/utils/object-id';
+import { toPaginatedData } from '@/utils/pagination';
+import { StatusCodes } from 'http-status-codes';
+
+interface CreateCommentInput {
+  targetId: string;
+  targetModel: CommentTargetModel;
+  content: string;
+  parentId?: string;
+}
+
+interface ListAllCommentsInput {
+  page: number;
+  limit: number;
+  search?: string;
+  targetModel?: CommentTargetModel;
+  targetId?: string;
+  userId?: string;
+  isHidden?: boolean;
+}
+
+interface CommentUserSnapshot {
+  _id: unknown;
+  fullName?: string;
+  avatarUrl?: string;
+  email?: string;
+}
+
+interface CommentTargetProductSnapshot {
+  _id: unknown;
+  name?: string;
+  slug?: string;
+  images?: string[];
+}
+
+interface CommentTargetLessonSnapshot {
+  _id: unknown;
+  title?: string;
+}
+
+const mapCommentUser = (rawUser: unknown) => {
+  if (!rawUser || typeof rawUser !== 'object' || !('_id' in rawUser)) {
+    return {
+      userId: String(rawUser ?? ''),
+      user: undefined
+    };
+  }
+
+  const user = rawUser as CommentUserSnapshot;
+
+  return {
+    userId: String(user._id),
+    user: {
+      id: String(user._id),
+      fullName: user.fullName,
+      avatarUrl: user.avatarUrl,
+      email: user.email
+    }
+  };
+};
+
+const buildCommentSearchFilter = (search?: string) => {
+  const normalizedSearch = search?.trim();
+
+  if (!normalizedSearch) {
+    return undefined;
+  }
+
+  return {
+    content: new RegExp(normalizedSearch, 'i')
+  };
+};
+
+const ensureTargetExists = async (targetId: string, targetModel: CommentTargetModel) => {
+  if (targetModel === 'product') {
+    const exists = await ProductModel.exists({ _id: toObjectId(targetId, 'targetId') });
+
+    if (!exists) {
+      throw new ApiError(StatusCodes.NOT_FOUND, 'Product not found');
+    }
+
+    return;
+  }
+
+  const exists = await LessonModel.exists({ _id: toObjectId(targetId, 'targetId') });
+
+  if (!exists) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Lesson not found');
+  }
+};
+
+export const createComment = async (userId: string, payload: CreateCommentInput) => {
+  await ensureTargetExists(payload.targetId, payload.targetModel);
+
+  if (payload.parentId) {
+    const parent = await CommentModel.findById(toObjectId(payload.parentId, 'parentId')).lean();
+
+    if (!parent) {
+      throw new ApiError(StatusCodes.NOT_FOUND, 'Parent comment not found');
+    }
+
+    if (
+      String(parent.targetId) !== payload.targetId ||
+      parent.targetModel !== payload.targetModel
+    ) {
+      throw new ApiError(
+        StatusCodes.UNPROCESSABLE_ENTITY,
+        'Parent comment target does not match current target'
+      );
+    }
+  }
+
+  const created = await CommentModel.create({
+    targetId: toObjectId(payload.targetId, 'targetId'),
+    targetModel: payload.targetModel,
+    userId: toObjectId(userId, 'userId'),
+    content: payload.content,
+    parentId: payload.parentId ? toObjectId(payload.parentId, 'parentId') : undefined,
+    isHidden: false
+  });
+
+  return created.toObject();
+};
+
+export const listComments = async (options: {
+  targetId: string;
+  targetModel: CommentTargetModel;
+  page: number;
+  limit: number;
+  includeHidden?: boolean;
+}) => {
+  const filters: Record<string, unknown> = {
+    targetId: toObjectId(options.targetId, 'targetId'),
+    targetModel: options.targetModel
+  };
+
+  if (!options.includeHidden) {
+    filters.isHidden = false;
+  }
+
+  const totalItems = await CommentModel.countDocuments(filters);
+  const items = await CommentModel.find(filters)
+    .sort({ createdAt: -1 })
+    .skip((options.page - 1) * options.limit)
+    .limit(options.limit)
+    .populate('userId', 'fullName avatarUrl email')
+    .lean();
+  const enrichedItems = (items as unknown as Array<Record<string, unknown>>).map((item) => {
+    const userInfo = mapCommentUser(item.userId);
+
+    return {
+      ...item,
+      userId: userInfo.userId,
+      user: userInfo.user
+    };
+  });
+
+  return toPaginatedData(enrichedItems, totalItems, options.page, options.limit);
+};
+
+export const listAllComments = async (options: ListAllCommentsInput) => {
+  const filters: Record<string, unknown> = {};
+
+  if (options.targetModel) {
+    filters.targetModel = options.targetModel;
+  }
+
+  if (options.targetId) {
+    filters.targetId = toObjectId(options.targetId, 'targetId');
+  }
+
+  if (options.userId) {
+    filters.userId = toObjectId(options.userId, 'userId');
+  }
+
+  if (options.isHidden !== undefined) {
+    filters.isHidden = options.isHidden;
+  }
+
+  const searchFilter = buildCommentSearchFilter(options.search);
+
+  if (searchFilter) {
+    Object.assign(filters, searchFilter);
+  }
+
+  const totalItems = await CommentModel.countDocuments(filters);
+  const items = await CommentModel.find(filters)
+    .sort({ createdAt: -1 })
+    .skip((options.page - 1) * options.limit)
+    .limit(options.limit)
+    .populate('userId', 'fullName avatarUrl email')
+    .lean();
+
+  const productTargetIds = new Set<string>();
+  const lessonTargetIds = new Set<string>();
+
+  for (const item of items as unknown as Array<Record<string, unknown>>) {
+    const targetId = String(item.targetId ?? '');
+    const targetModel = item.targetModel === 'lesson' ? 'lesson' : 'product';
+
+    if (!targetId) {
+      continue;
+    }
+
+    if (targetModel === 'product') {
+      productTargetIds.add(targetId);
+    } else {
+      lessonTargetIds.add(targetId);
+    }
+  }
+
+  const [products, lessons] = await Promise.all([
+    productTargetIds.size > 0
+      ? ProductModel.find(
+          {
+            _id: {
+              $in: [...productTargetIds].map((targetId) => toObjectId(targetId, 'targetId'))
+            }
+          },
+          {
+            name: 1,
+            slug: 1,
+            images: 1
+          }
+        ).lean()
+      : Promise.resolve([]),
+    lessonTargetIds.size > 0
+      ? LessonModel.find(
+          {
+            _id: {
+              $in: [...lessonTargetIds].map((targetId) => toObjectId(targetId, 'targetId'))
+            }
+          },
+          {
+            title: 1
+          }
+        ).lean()
+      : Promise.resolve([])
+  ]);
+
+  const productMap = new Map<string, CommentTargetProductSnapshot>(
+    products.map((product) => [
+      String(product._id),
+      product as unknown as CommentTargetProductSnapshot
+    ])
+  );
+  const lessonMap = new Map<string, CommentTargetLessonSnapshot>(
+    lessons.map((lesson) => [String(lesson._id), lesson as unknown as CommentTargetLessonSnapshot])
+  );
+
+  const enrichedItems = (items as unknown as Array<Record<string, unknown>>).map((item) => {
+    const userInfo = mapCommentUser(item.userId);
+    const targetModel = item.targetModel === 'lesson' ? 'lesson' : 'product';
+    const targetId = String(item.targetId ?? '');
+
+    if (targetModel === 'product') {
+      const target = productMap.get(targetId);
+
+      return {
+        ...item,
+        userId: userInfo.userId,
+        user: userInfo.user,
+        targetId,
+        targetModel,
+        parentId: item.parentId ? String(item.parentId) : undefined,
+        target: {
+          id: targetId,
+          targetModel,
+          name: target?.name,
+          slug: target?.slug,
+          thumbnailUrl: Array.isArray(target?.images) ? target.images[0] : undefined
+        }
+      };
+    }
+
+    const target = lessonMap.get(targetId);
+
+    return {
+      ...item,
+      userId: userInfo.userId,
+      user: userInfo.user,
+      targetId,
+      targetModel,
+      parentId: item.parentId ? String(item.parentId) : undefined,
+      target: {
+        id: targetId,
+        targetModel,
+        name: target?.title
+      }
+    };
+  });
+
+  return toPaginatedData(enrichedItems, totalItems, options.page, options.limit);
+};
+
+export const updateCommentVisibility = async (commentId: string, isHidden: boolean) => {
+  const updated = await CommentModel.findByIdAndUpdate(
+    toObjectId(commentId, 'commentId'),
+    {
+      isHidden
+    },
+    {
+      returnDocument: 'after'
+    }
+  ).lean();
+
+  if (!updated) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Comment not found');
+  }
+
+  return updated;
+};
+
+export const deleteComment = async (
+  commentId: string,
+  requesterId: string,
+  requesterRole: Role
+) => {
+  const comment = await CommentModel.findById(toObjectId(commentId, 'commentId')).lean();
+
+  if (!comment) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Comment not found');
+  }
+
+  const isOwner = String(comment.userId) === requesterId;
+  const canModerate = requesterRole === 'staff' || requesterRole === 'admin';
+
+  if (!isOwner && !canModerate) {
+    throw new ApiError(StatusCodes.FORBIDDEN, 'You are not allowed to delete this comment');
+  }
+
+  await CommentModel.deleteMany({
+    $or: [
+      {
+        _id: comment._id
+      },
+      {
+        parentId: comment._id
+      }
+    ]
+  });
+
+  return {
+    id: String(comment._id)
+  };
+};
