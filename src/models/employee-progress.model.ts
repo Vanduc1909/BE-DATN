@@ -1,4 +1,5 @@
-import { Schema, Types, model } from 'mongoose';
+import { Schema, model } from 'mongoose';
+import type { Types } from 'mongoose';
 
 import type { EmployeeProgressStatus } from '@/types/domain';
 
