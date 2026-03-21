@@ -51,6 +51,49 @@ const defaultOptions: SeedOptions = {
   clear: false
 };
 
+const FIXED_SEED_USERS: Array<{
+  email: string;
+  fullName: string;
+  role: Role;
+  staffDepartment?: string;
+}> = [
+  {
+    email: 'admin@gmail.com',
+    fullName: 'Quản trị hệ thống',
+    role: 'admin'
+  },
+  {
+    email: 'buiduc1709@gmail.com',
+    fullName: 'Bùi Đức',
+    role: 'admin'
+  },
+  {
+    email: 'nhanvien@gmail.com',
+    fullName: 'Nhân viên cửa hàng',
+    role: 'staff',
+    staffDepartment: 'Sales'
+  },
+  {
+    email: 'nguyenvanducanh04@gmail.com',
+    fullName: 'Nguyễn Văn Đức Anh',
+    role: 'customer'
+  },
+  {
+    email: 'tutaph41643@fpt.edu.vn',
+    fullName: 'Trần Tú',
+    role: 'customer'
+  },
+  {
+    email: 'huynqph46255@fpt.edu.vn',
+    fullName: 'Quốc Huy',
+    role: 'customer'
+  },
+  {
+    email: 'dungpdph50412@gmail.com',
+    fullName: 'Phạm Dũng',
+    role: 'customer'
+  }
+];
 const colorPalette = [
   { name: 'Black', hex: '#111111' },
   { name: 'White', hex: '#F5F5F5' },
@@ -165,29 +208,48 @@ const seedUsers = async (count: number) => {
   }
 
   const defaultPasswordHash = await bcrypt.hash('12345678', 10);
-  const roleCycle: Role[] = ['admin', 'staff', 'customer'];
+  const targetCount = Math.max(count, FIXED_SEED_USERS.length);
+  const roleCycle: Role[] = ['customer', 'staff', 'customer'];
   const tierPool: MembershipTier[] = ['bronze', 'silver', 'gold', 'platinum'];
 
-  const userPayloads = Array.from({ length: count }, (_, index) => {
-    const idPart = `${index + 1}-${uniqueSuffix()}`;
-    const role = roleCycle[index % roleCycle.length];
+  const fixedUserPayloads = FIXED_SEED_USERS.map((account, index) => ({
+    email: account.email,
+    passwordHash: defaultPasswordHash,
+    fullName: account.fullName,
+    phone: faker.phone.number({ style: 'international' }),
+    role: account.role,
+    avatarUrl: randomImage(`fixed-user-${index + 1}`),
+    loyaltyPoints: faker.number.int({ min: 0, max: 10000 }),
+    membershipTier: faker.helpers.arrayElement(tierPool),
+    staffDepartment:
+      account.role !== 'customer'
+        ? (account.staffDepartment ?? faker.commerce.department())
+        : undefined,
+    staffStartDate: account.role !== 'customer' ? faker.date.past() : undefined
+  }));
 
-    return {
-      username: index === 0 ? 'admin' : `user_${idPart}`,
-      email: index === 0 ? 'buiduc1709@gmail.com' : `user_${idPart}@example.com`,
-      passwordHash: defaultPasswordHash,
-      fullName: index === 0 ? 'Admin' : faker.person.fullName(),
-      phone: faker.phone.number({ style: 'international' }),
-      role,
-      avatarUrl: randomImage(`user-${idPart}`),
-      loyaltyPoints: faker.number.int({ min: 0, max: 10000 }),
-      membershipTier: faker.helpers.arrayElement(tierPool),
-      staffDepartment: role !== 'customer' ? faker.commerce.department() : undefined,
-      staffStartDate: role !== 'customer' ? faker.date.past() : undefined
-    };
-  });
+  const randomUserPayloads = Array.from(
+    { length: targetCount - fixedUserPayloads.length },
+    (_, index) => {
+      const idPart = `${index + 1}-${uniqueSuffix()}`;
+      const role = roleCycle[index % roleCycle.length];
 
-  return UserModel.insertMany(userPayloads);
+      return {
+        email: `user_${idPart}@example.com`,
+        passwordHash: defaultPasswordHash,
+        fullName: faker.person.fullName(),
+        phone: faker.phone.number({ style: 'international' }),
+        role,
+        avatarUrl: randomImage(`user-${idPart}`),
+        loyaltyPoints: faker.number.int({ min: 0, max: 10000 }),
+        membershipTier: faker.helpers.arrayElement(tierPool),
+        staffDepartment: role !== 'customer' ? faker.commerce.department() : undefined,
+        staffStartDate: role !== 'customer' ? faker.date.past() : undefined
+      };
+    }
+  );
+
+  return UserModel.insertMany([...fixedUserPayloads, ...randomUserPayloads]);
 };
 
 const seedAddresses = async (userIds: Types.ObjectId[]) => {
@@ -378,6 +440,8 @@ const seedVouchers = async (count: number) => {
       'fixed_amount'
     ]);
 
+    const usageLimit = faker.number.int({ min: 20, max: 500 });
+
     return {
       code: `SALE-${faker.string.alphanumeric(8).toUpperCase()}`,
       description: faker.lorem.sentence(),
@@ -391,7 +455,8 @@ const seedVouchers = async (count: number) => {
         discountType === 'percentage' ? faker.number.int({ min: 30000, max: 300000 }) : undefined,
       startDate: faker.date.recent({ days: 10 }),
       expirationDate: faker.date.soon({ days: 45 }),
-      usageLimit: faker.number.int({ min: 20, max: 500 }),
+      usageLimit,
+      maxUsagePerUser: faker.number.int({ min: 1, max: usageLimit - 1 }),
       usedCount: faker.number.int({ min: 0, max: 10 }),
       isActive: true
     };
