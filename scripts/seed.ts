@@ -185,13 +185,21 @@ const uniqueSuffix = () => `${Date.now()}-${faker.string.alphanumeric(6).toLower
 const randomImage = (seed: string) => `https://picsum.photos/seed/${seed}/1000/1000`;
 
 const clearCollections = async () => {
+  try {
+    await ProductVariantModel.collection.drop();
+  } catch (error) {
+    const code = (error as { code?: number })?.code;
+
+    if (code !== 26) {
+      throw error;
+    }
+  }
+
   await Promise.all([
     ReviewModel.deleteMany({}),
     OrderModel.deleteMany({}),
     CartModel.deleteMany({}),
     InventoryLogModel.deleteMany({}),
-    ProductVariantModel.collection.drop().catch(() => {}), // drop to remove legacy schema indexes
-    ProductVariantModel.deleteMany({}),
     ProductModel.deleteMany({}),
     VoucherModel.deleteMany({}),
     AddressModel.deleteMany({}),
