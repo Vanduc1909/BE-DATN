@@ -203,24 +203,41 @@ const uniqueSuffix = () => `${Date.now()}-${faker.string.alphanumeric(6).toLower
 
 const randomImage = (seed: string) => `https://picsum.photos/seed/${seed}/1000/1000`;
 
-const clearCollections = async () => {
-  await Promise.all([
-    ReviewModel.deleteMany({}),
-    OrderModel.deleteMany({}),
-    CartModel.deleteMany({}),
-    InventoryLogModel.deleteMany({}),
-    ProductVariantModel.collection.drop().catch(() => {}), // drop to remove legacy schema indexes
-    ProductVariantModel.deleteMany({}),
-    ProductModel.deleteMany({}),
-    VoucherModel.deleteMany({}),
-    AddressModel.deleteMany({}),
-    CategoryModel.deleteMany({}),
-    UserModel.deleteMany({}),
-    ColorModel.deleteMany({}),
-    SizeModel.deleteMany({})
-  ]);
-};
+const dropCollectionIfExists = async (collection: { name: string; drop: () => Promise<unknown> }) => {
+  try {
+    
+    await collection.drop();
+  } catch (error) {
+    const code = (error as { code?: number })?.code;
+    const message = (error as Error).message?.toLowerCase() ?? '';
 
+    // Ignore "NamespaceNotFound" when collection does not exist yet.
+    
+    if (code !== 26 && !message.includes('ns not found')) {
+      throw error;
+    }
+  }
+};
+const clearCollections = async () => {
+  const collections = [
+    ReviewModel.collection,
+    OrderModel.collection,
+    CartModel.collection,
+    InventoryLogModel.collection,
+    ProductVariantModel.collection,
+    ProductModel.collection,
+    VoucherModel.collection,
+    AddressModel.collection,
+    CategoryModel.collection,
+    BrandModel.collection,
+    UserModel.collection,
+    ColorModel.collection,
+    SizeModel.collection
+  ];
+
+  for (const collection of collections) {
+    await dropCollectionIfExists(collection);
+  }
 const seedUsers = async (count: number) => {
   if (count === 0) {
     return [];
