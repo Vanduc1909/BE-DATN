@@ -29,7 +29,6 @@ const getAuth = (req: Request) => {
 export const listCommentsController = asyncHandler(async (req, res) => {
   const data = await listComments({
     targetId: req.query.targetId as string,
-    targetModel: req.query.targetModel as 'product' | 'lesson',
     page: res.locals.pagination?.page ?? 1,
     limit: res.locals.pagination?.limit ?? 20,
     includeHidden:
@@ -52,7 +51,6 @@ export const listAllCommentsController = asyncHandler(async (req, res) => {
     search: getOptionalParam(req.query.search as string | string[] | undefined),
     targetModel: getOptionalParam(req.query.targetModel as string | string[] | undefined) as
       | 'product'
-      | 'lesson'
       | undefined,
     targetId: getOptionalParam(req.query.targetId as string | string[] | undefined),
     userId: getOptionalParam(req.query.userId as string | string[] | undefined),
