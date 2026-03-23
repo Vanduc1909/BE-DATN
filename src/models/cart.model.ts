@@ -1,7 +1,8 @@
-import { Schema, Types, model } from 'mongoose';
+import { Schema, model, type Types } from 'mongoose';
 
 export interface CartItemDocument {
   productId: Types.ObjectId;
+   variantId: Types.ObjectId;
   quantity: number;
   selectedAttributes?: Record<string, unknown>;
 }
@@ -16,6 +17,7 @@ const cartItemSchema = new Schema<CartItemDocument>(
   {
     productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
     quantity: { type: Number, required: true, default: 1, min: 1 },
+    variantId: { type: Schema.Types.ObjectId, ref: 'ProductVariant', required: true },
     selectedAttributes: { type: Schema.Types.Mixed }
   },
   {

@@ -68,15 +68,16 @@ const toDateKey = (value: Date) => {
   return value.toISOString().slice(0, 10);
 };
 
-const buildDateRange = (days: number) => {
-  const today = new Date();
-  const toDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
-  const fromDate = new Date(toDate);
-  fromDate.setDate(fromDate.getDate() - (days - 1));
-  fromDate.setHours(0, 0, 0, 0);
-
-  return { fromDate, toDate };
-};
+interface VariantSalesAggregateItem {
+  _id: unknown;
+  productId?: unknown;
+  productName?: string;
+  variantSku?: string;
+  variantColor?: string;
+  productImage?: string;
+  soldCount: number;
+  revenue: number;
+}
 
 const generateOrderCode = () => {
   const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
