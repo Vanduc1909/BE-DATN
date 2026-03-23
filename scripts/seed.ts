@@ -2,6 +2,7 @@ import { faker } from '@faker-js/faker';
 import bcrypt from 'bcryptjs';
 import type { Types } from 'mongoose';
 
+import { BrandModel } from '@/models/brand.model';
 import { logger } from '@/config/logger';
 import { connectMongo, disconnectMongo } from '@/config/mongoose';
 import { AddressModel } from '@/models/address.model';
@@ -29,6 +30,7 @@ import type {
 interface SeedOptions {
   users: number;
   categories: number;
+  brands: number;
   products: number;
   variantsPerProduct: number;
   vouchers: number;
@@ -42,6 +44,7 @@ interface SeedOptions {
 const defaultOptions: SeedOptions = {
   users: 30,
   categories: 8,
+  brands: 12,
   products: 40,
   variantsPerProduct: 4,
   vouchers: 10,
@@ -107,6 +110,21 @@ const colorPalette = [
   { name: 'Purple', hex: '#8E24AA' }
 ] as const;
 
+const featuredBrandNames = [
+  'Predator',
+  'Peri',
+  'Cuetec',
+  'Mezz',
+  'Poison',
+  'Fury',
+  'JFlowers',
+  'Pechauer',
+  'McDermott',
+  'Lucasi',
+  'Balabushka',
+  'Viking'
+] as const;
+
 const toInteger = (value: string | undefined, fallback: number) => {
   if (!value) {
     return fallback;
@@ -163,6 +181,7 @@ const parseOptions = (): SeedOptions => {
   return {
     users: toInteger(get('users', 'SEED_USERS'), defaultOptions.users),
     categories: toInteger(get('categories', 'SEED_CATEGORIES'), defaultOptions.categories),
+    brands: toInteger(get('brands', 'SEED_BRANDS'), defaultOptions.brands),
     products: toInteger(get('products', 'SEED_PRODUCTS'), defaultOptions.products),
     variantsPerProduct: toInteger(
       get('variantsPerProduct', 'SEED_VARIANTS_PER_PRODUCT'),
@@ -299,7 +318,48 @@ const seedCategories = async (count: number) => {
   return categories;
 };
 
-const seedProducts = async (count: number, categoryIds: Types.ObjectId[]) => {
+const seedBrands = async (count: number) => {
+  if (count === 0) {
+    return [];
+  }
+
+  const brands: Array<{ _id: Types.ObjectId; name: string }> = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const fallbackName = `${faker.company.name()} ${index + 1}`;
+    const name = featuredBrandNames[index] ?? fallbackName;
+    const baseSlug = buildSlug(name) || `brand-${index + 1}`;
+
+    let candidateSlug = baseSlug;
+    let sequence = 1;
+
+    while (await BrandModel.exists({ slug: candidateSlug })) {
+      candidateSlug = `${baseSlug}-${sequence}`;
+      sequence += 1;
+    }
+
+    const created = await BrandModel.create({
+      name,
+      slug: candidateSlug,
+      description: faker.lorem.sentence(),
+      logoUrl: randomImage(`brand-${candidateSlug}`),
+      isActive: true
+    });
+
+    brands.push({
+      _id: created._id as Types.ObjectId,
+      name: created.name
+    });
+  }
+
+  return brands;
+};
+
+const seedProducts = async (
+  count: number,
+  categoryIds: Types.ObjectId[],
+  brands: Array<{ _id: Types.ObjectId; name: string }>
+) => {
   if (count === 0 || categoryIds.length === 0) {
     return [];
   }
@@ -307,11 +367,13 @@ const seedProducts = async (count: number, categoryIds: Types.ObjectId[]) => {
   const payloads = Array.from({ length: count }, (_, index) => {
     const name = faker.commerce.productName();
     const idPart = `${index + 1}-${uniqueSuffix()}`;
-
+    const assignedBrand = brands.length > 0 ? faker.helpers.arrayElement(brands) : undefined;
     return {
       name,
       categoryId: faker.helpers.arrayElement(categoryIds),
       description: faker.commerce.productDescription(),
+       brandId: assignedBrand?._id,
+      brand: assignedBrand?.name ?? faker.company.name(),
       attributes: {
         brand: faker.company.name(),
         material: faker.commerce.productMaterial()
@@ -733,15 +795,23 @@ const main = async () => {
   await seedAddresses(customerUsers.map((user) => user._id as Types.ObjectId));
 
   let categories = await seedCategories(options.categories);
-
+  let brands = await seedBrands(options.brands);
   if (categories.length === 0 && options.products > 0) {
     const fallback = await seedCategories(1);
     categories = fallback;
   }
+  if (brands.length === 0 && options.products > 0) {
+    const fallback = await seedBrands(1);
+    brands = fallback;
+  }
 
   const products = await seedProducts(
     options.products,
-    categories.map((category) => category._id)
+     categories.map((category) => category._id),
+    brands.map((brand) => ({
+      _id: brand._id,
+      name: brand.name
+    }))
   );
 
   const [colors, sizes] = await Promise.all([seedColors(), seedSizes()]);
@@ -813,6 +883,7 @@ const main = async () => {
       {
         users: users.length,
         categories: categories.length,
+        brands: brands.length,
         products: products.length,
         variants: variants.length,
         vouchers: vouchers.length,
