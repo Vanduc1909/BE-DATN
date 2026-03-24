@@ -22,7 +22,6 @@ import { th } from 'zod/v4/locales';
 interface RegisterInput {
   email: string;
   password: string;
-  username?: string;
   fullName?: string;
   phone?: string;
 }
@@ -51,7 +50,6 @@ interface LogoutInput {
 }
 
 interface UpdateMeInput {
-  username?: string;
   fullName?: string;
   phone?: string;
   avatarUrl?: string;
@@ -70,13 +68,10 @@ const hashPassword = async (password: string) => {
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
-const normalizeUsername = (username?: string) => username?.trim().toLowerCase();
-
 const toPublicUser = (user: UserLean) => {
   return {
     id: String(user._id),
     email: user.email,
-    username: user.username,
     isActive: user.isActive !== false,
     fullName: user.fullName,
     phone: user.phone,
@@ -99,29 +94,15 @@ const ensureActiveAccount = (user: Pick<UserLean, 'isActive'>) => {
 
 export const register = async (payload: RegisterInput) => {
   const email = normalizeEmail(payload.email);
-  const username = normalizeUsername(payload.username);
-
-  const conflictConditions: Array<Record<string, string>> = [{ email }];
-
-  if (username) {
-    conflictConditions.push({ username });
-  }
-
-  const existingUser = await UserModel.findOne({ $or: conflictConditions }).lean();
-
+  const existingUser = await UserModel.findOne({ email }).lean();
   if (existingUser) {
-    if (existingUser.email === email) {
-      throw new ApiError(StatusCodes.CONFLICT, 'Email already exists');
-    }
-
-    throw new ApiError(StatusCodes.CONFLICT, 'Username already exists');
+    throw new ApiError(StatusCodes.CONFLICT, 'Email already exists');
   }
 
   const passwordHash = await hashPassword(payload.password);
 
   const createdUser = await UserModel.create({
     email,
-    username,
     passwordHash,
     fullName: payload.fullName,
     phone: payload.phone,
@@ -320,27 +301,6 @@ export const updateMe = async (userId: string, payload: UpdateMeInput) => {
   }
 
   ensureActiveAccount(user.toObject() as UserLean);
-
-  if (payload.username !== undefined) {
-    const nextUsername = normalizeUsername(payload.username);
-
-    if (!nextUsername) {
-      throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Invalid username');
-    }
-
-    const usernameConflict = await UserModel.findOne({
-      username: nextUsername,
-      _id: {
-        $ne: user._id
-      }
-    }).lean();
-
-    if (usernameConflict) {
-      throw new ApiError(StatusCodes.CONFLICT, 'Username already exists');
-    }
-
-    user.username = nextUsername;
-  }
 
   if (payload.fullName !== undefined) {
     user.fullName = payload.fullName;
