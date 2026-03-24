@@ -1,5 +1,4 @@
 import { CommentModel } from '@/models/comment.model';
-import { LessonModel } from '@/models/lesson.model';
 import { ProductModel } from '@/models/product.model';
 import { CommentTargetModel, Role } from '@/types/domain';
 import { ApiError } from '@/utils/api-error';
@@ -38,11 +37,6 @@ interface CommentTargetProductSnapshot {
   images?: string[];
 }
 
-interface CommentTargetLessonSnapshot {
-  _id: unknown;
-  title?: string;
-}
-
 const mapCommentUser = (rawUser: unknown) => {
   if (!rawUser || typeof rawUser !== 'object' || !('_id' in rawUser)) {
     return {
@@ -76,26 +70,16 @@ const buildCommentSearchFilter = (search?: string) => {
   };
 };
 
-const ensureTargetExists = async (targetId: string, targetModel: CommentTargetModel) => {
-  if (targetModel === 'product') {
-    const exists = await ProductModel.exists({ _id: toObjectId(targetId, 'targetId') });
-
-    if (!exists) {
-      throw new ApiError(StatusCodes.NOT_FOUND, 'Product not found');
-    }
-
-    return;
-  }
-
-  const exists = await LessonModel.exists({ _id: toObjectId(targetId, 'targetId') });
+const ensureTargetExists = async (targetId: string) => {
+  const exists = await ProductModel.exists({ _id: toObjectId(targetId, 'targetId') });
 
   if (!exists) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'Lesson not found');
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Product not found');
   }
 };
 
 export const createComment = async (userId: string, payload: CreateCommentInput) => {
-  await ensureTargetExists(payload.targetId, payload.targetModel);
+  await ensureTargetExists(payload.targetId);
 
   if (payload.parentId) {
     const parent = await CommentModel.findById(toObjectId(payload.parentId, 'parentId')).lean();
@@ -129,14 +113,13 @@ export const createComment = async (userId: string, payload: CreateCommentInput)
 
 export const listComments = async (options: {
   targetId: string;
-  targetModel: CommentTargetModel;
   page: number;
   limit: number;
   includeHidden?: boolean;
 }) => {
   const filters: Record<string, unknown> = {
     targetId: toObjectId(options.targetId, 'targetId'),
-    targetModel: options.targetModel
+    targetModel: 'product'
   };
 
   if (!options.includeHidden) {
@@ -164,7 +147,9 @@ export const listComments = async (options: {
 };
 
 export const listAllComments = async (options: ListAllCommentsInput) => {
-  const filters: Record<string, unknown> = {};
+  const filters: Record<string, unknown> = {
+    targetModel: 'product'
+  };
 
   if (options.targetModel) {
     filters.targetModel = options.targetModel;
@@ -197,26 +182,20 @@ export const listAllComments = async (options: ListAllCommentsInput) => {
     .lean();
 
   const productTargetIds = new Set<string>();
-  const lessonTargetIds = new Set<string>();
 
   for (const item of items as unknown as Array<Record<string, unknown>>) {
     const targetId = String(item.targetId ?? '');
-    const targetModel = item.targetModel === 'lesson' ? 'lesson' : 'product';
 
     if (!targetId) {
       continue;
     }
 
-    if (targetModel === 'product') {
-      productTargetIds.add(targetId);
-    } else {
-      lessonTargetIds.add(targetId);
-    }
+    productTargetIds.add(targetId);
   }
 
-  const [products, lessons] = await Promise.all([
+  const products =
     productTargetIds.size > 0
-      ? ProductModel.find(
+      ? await ProductModel.find(
           {
             _id: {
               $in: [...productTargetIds].map((targetId) => toObjectId(targetId, 'targetId'))
@@ -228,20 +207,7 @@ export const listAllComments = async (options: ListAllCommentsInput) => {
             images: 1
           }
         ).lean()
-      : Promise.resolve([]),
-    lessonTargetIds.size > 0
-      ? LessonModel.find(
-          {
-            _id: {
-              $in: [...lessonTargetIds].map((targetId) => toObjectId(targetId, 'targetId'))
-            }
-          },
-          {
-            title: 1
-          }
-        ).lean()
-      : Promise.resolve([])
-  ]);
+      : [];
 
   const productMap = new Map<string, CommentTargetProductSnapshot>(
     products.map((product) => [
@@ -249,36 +215,13 @@ export const listAllComments = async (options: ListAllCommentsInput) => {
       product as unknown as CommentTargetProductSnapshot
     ])
   );
-  const lessonMap = new Map<string, CommentTargetLessonSnapshot>(
-    lessons.map((lesson) => [String(lesson._id), lesson as unknown as CommentTargetLessonSnapshot])
-  );
 
   const enrichedItems = (items as unknown as Array<Record<string, unknown>>).map((item) => {
     const userInfo = mapCommentUser(item.userId);
-    const targetModel = item.targetModel === 'lesson' ? 'lesson' : 'product';
+    const targetModel: CommentTargetModel = 'product';
     const targetId = String(item.targetId ?? '');
 
-    if (targetModel === 'product') {
-      const target = productMap.get(targetId);
-
-      return {
-        ...item,
-        userId: userInfo.userId,
-        user: userInfo.user,
-        targetId,
-        targetModel,
-        parentId: item.parentId ? String(item.parentId) : undefined,
-        target: {
-          id: targetId,
-          targetModel,
-          name: target?.name,
-          slug: target?.slug,
-          thumbnailUrl: Array.isArray(target?.images) ? target.images[0] : undefined
-        }
-      };
-    }
-
-    const target = lessonMap.get(targetId);
+    const target = productMap.get(targetId);
 
     return {
       ...item,
@@ -290,7 +233,9 @@ export const listAllComments = async (options: ListAllCommentsInput) => {
       target: {
         id: targetId,
         targetModel,
-        name: target?.title
+        name: target?.name,
+        slug: target?.slug,
+        thumbnailUrl: Array.isArray(target?.images) ? target.images[0] : undefined
       }
     };
   });
