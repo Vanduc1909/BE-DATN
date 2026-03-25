@@ -6,7 +6,8 @@ import { ProductModel } from '@/models/product.model';
 import { ReviewModel } from '@/models/review.model';
 import { UserModel } from '@/models/user.model';
 import { VoucherModel } from '@/models/voucher.model';
-import { OrderStatus, PaymentMethod } from '@/types/domain';
+import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/domain';
+import { logger } from '@config/logger';
 import { ApiError } from '@/utils/api-error';
 import { addMoney, roundMoney, subtractMoney } from '@/utils/money';
 import { toObjectId } from '@/utils/object-id';
@@ -15,6 +16,7 @@ import { toPaginatedData } from '@/utils/pagination';
 import { verifyVnpayReturnSchema } from '@/validators/order.validator';
 import { StatusCodes } from 'http-status-codes';
 import { createVnpayPaymentUrl } from './vnpay.service';
+import { sendMail } from '@services/mail.service';
 
 interface CreaterOrderInput {
   addressId?: string;
@@ -63,6 +65,246 @@ const ORDER_STATUS_ORDER: OrderStatus[] = [
 ];
 
 const PAYMENT_METHOD_ORDER: PaymentMethod[] = ['cod', 'banking', 'momo', 'vnpay'];
+const MONEY_FORMATTER = new Intl.NumberFormat('vi-VN');
+
+const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  pending: 'Chờ xác nhận',
+  confirmed: 'Đã xác nhận',
+  preparing: 'Đang chuẩn bị',
+  shipping: 'Đang giao',
+  delivered: 'Đã giao',
+  cancelled: 'Đã hủy',
+  returned: 'Đã trả hàng'
+};
+
+const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  cod: 'COD',
+  banking: 'Chuyển khoản',
+  momo: 'MoMo',
+  vnpay: 'VNPay'
+};
+
+const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
+  pending: 'Chờ thanh toán',
+  paid: 'Đã thanh toán',
+  failed: 'Thanh toán thất bại',
+  refunded: 'Đã hoàn tiền'
+};
+
+type OrderMailSnapshot = Pick<
+  OrderDocument,
+  | 'orderCode'
+  | 'status'
+  | 'paymentMethod'
+  | 'paymentStatus'
+  | 'shippingRecipientName'
+  | 'shippingPhone'
+  | 'shippingAddress'
+  | 'subtotal'
+  | 'shippingFee'
+  | 'discountAmount'
+  | 'totalAmount'
+  | 'items'
+  | 'createdAt'
+  | 'updatedAt'
+>;
+
+interface SendOrderLifecycleMailInput {
+  to: string;
+  customerName?: string;
+  order: OrderMailSnapshot;
+  event: 'created' | 'status_updated';
+  previousStatus?: OrderStatus;
+  note?: string;
+  paymentUrl?: string;
+}
+
+const escapeHtml = (value: string) => {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+};
+
+const formatMoneyVnd = (value: number) => `${MONEY_FORMATTER.format(Math.max(0, roundMoney(value)))} ₫`;
+
+const formatDateTime = (value?: Date | string) => {
+  if (!value) {
+    return 'N/A';
+  }
+
+  return new Date(value).toLocaleString('vi-VN', {
+    hour12: false,
+    timeZone: 'Asia/Ho_Chi_Minh'
+  });
+};
+
+const sendOrderLifecycleMail = async ({
+  to,
+  customerName,
+  order,
+  event,
+  previousStatus,
+  note,
+  paymentUrl
+}: SendOrderLifecycleMailInput) => {
+  try {
+    const itemsRowsHtml = order.items
+      .map((item, index) => {
+        return `
+          <tr>
+            <td style="padding:8px;border:1px solid #e5e7eb;text-align:center;">${index + 1}</td>
+            <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(item.productName)}</td>
+            <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(item.variantSku)}</td>
+            <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(item.variantColor)}</td>
+            <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">${item.quantity}</td>
+            <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">${formatMoneyVnd(item.price)}</td>
+            <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">${formatMoneyVnd(item.total)}</td>
+          </tr>
+        `;
+      })
+      .join('');
+
+    const statusChangeHtml =
+      event === 'status_updated'
+        ? `
+      <p style="margin:0 0 12px;color:#374151;">
+        Trạng thái đơn hàng đã đổi từ
+        <strong>${ORDER_STATUS_LABELS[previousStatus ?? order.status]}</strong>
+        sang
+        <strong>${ORDER_STATUS_LABELS[order.status]}</strong>.
+      </p>
+      ${note ? `<p style="margin:0 0 12px;color:#374151;">Ghi chú: ${escapeHtml(note)}</p>` : ''}
+    `
+        : `<p style="margin:0 0 12px;color:#374151;">Đơn hàng của bạn đã được tạo thành công.</p>`;
+
+    const paymentLinkHtml =
+      paymentUrl && event === 'created'
+        ? `
+      <p style="margin:0 0 12px;color:#374151;">
+        Link thanh toán:
+        <a href="${paymentUrl}" style="color:#2563eb;word-break:break-all;">${escapeHtml(paymentUrl)}</a>
+      </p>
+    `
+        : '';
+
+    const subject =
+      event === 'created'
+        ? `[Golden Billiards] Xác nhận đơn hàng ${order.orderCode}`
+        : `[Golden Billiards] Cập nhật trạng thái đơn hàng ${order.orderCode}`;
+
+    const textItems = order.items
+      .map((item, index) => {
+        return `${index + 1}. ${item.productName} | SKU: ${item.variantSku} | Màu: ${item.variantColor} | SL: ${item.quantity} | Đơn giá: ${formatMoneyVnd(item.price)} | Thành tiền: ${formatMoneyVnd(item.total)}`;
+      })
+      .join('\n');
+
+    const text =
+      `Xin chào ${customerName ?? order.shippingRecipientName ?? 'bạn'},\n\n` +
+      `${event === 'created' ? 'Đơn hàng của bạn đã được tạo thành công.' : 'Đơn hàng của bạn vừa được cập nhật trạng thái.'}\n` +
+      `${event === 'status_updated' ? `Trạng thái: ${ORDER_STATUS_LABELS[previousStatus ?? order.status]} -> ${ORDER_STATUS_LABELS[order.status]}\n` : ''}` +
+      `${note ? `Ghi chú: ${note}\n` : ''}` +
+      `\nMã đơn: ${order.orderCode}\n` +
+      `Người nhận: ${order.shippingRecipientName}\n` +
+      `SĐT: ${order.shippingPhone}\n` +
+      `Địa chỉ: ${order.shippingAddress}\n` +
+      `Phương thức thanh toán: ${PAYMENT_METHOD_LABELS[order.paymentMethod]}\n` +
+      `Trạng thái thanh toán: ${PAYMENT_STATUS_LABELS[order.paymentStatus]}\n` +
+      `Ngày tạo: ${formatDateTime(order.createdAt)}\n` +
+      `Cập nhật gần nhất: ${formatDateTime(order.updatedAt)}\n` +
+      `\nDanh sách sản phẩm:\n${textItems}\n` +
+      `\nTạm tính: ${formatMoneyVnd(order.subtotal)}\n` +
+      `Phí vận chuyển: ${formatMoneyVnd(order.shippingFee)}\n` +
+      `Giảm giá: ${formatMoneyVnd(order.discountAmount)}\n` +
+      `Tổng thanh toán: ${formatMoneyVnd(order.totalAmount)}\n` +
+      `${paymentUrl && event === 'created' ? `\nLink thanh toán: ${paymentUrl}\n` : ''}` +
+      `\nCảm ơn bạn đã mua sắm tại Golden Billiards.`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="vi">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px 0;background:#f3f4f6;">
+    <tr>
+      <td align="center">
+        <table width="760" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;">
+          <tr>
+            <td style="background:#111827;padding:20px 24px;">
+              <h1 style="margin:0;color:#ffffff;font-size:20px;">Golden Billiards</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px;">
+              <p style="margin:0 0 12px;color:#111827;">Xin chào <strong>${escapeHtml(
+                customerName ?? order.shippingRecipientName ?? 'bạn'
+              )}</strong>,</p>
+              ${statusChangeHtml}
+              ${paymentLinkHtml}
+              <h3 style="margin:16px 0 8px;color:#111827;">Thông tin đơn hàng</h3>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:16px;">
+                <tr><td style="padding:6px 0;color:#6b7280;width:180px;">Mã đơn</td><td style="padding:6px 0;color:#111827;">${escapeHtml(order.orderCode)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Người nhận</td><td style="padding:6px 0;color:#111827;">${escapeHtml(order.shippingRecipientName)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Số điện thoại</td><td style="padding:6px 0;color:#111827;">${escapeHtml(order.shippingPhone)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Địa chỉ</td><td style="padding:6px 0;color:#111827;">${escapeHtml(order.shippingAddress)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Trạng thái đơn</td><td style="padding:6px 0;color:#111827;">${ORDER_STATUS_LABELS[order.status]}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Phương thức thanh toán</td><td style="padding:6px 0;color:#111827;">${PAYMENT_METHOD_LABELS[order.paymentMethod]}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Trạng thái thanh toán</td><td style="padding:6px 0;color:#111827;">${PAYMENT_STATUS_LABELS[order.paymentStatus]}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Ngày tạo</td><td style="padding:6px 0;color:#111827;">${formatDateTime(order.createdAt)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Cập nhật gần nhất</td><td style="padding:6px 0;color:#111827;">${formatDateTime(order.updatedAt)}</td></tr>
+              </table>
+
+              <h3 style="margin:16px 0 8px;color:#111827;">Danh sách sản phẩm đã đặt</h3>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:16px;">
+                <thead>
+                  <tr style="background:#f9fafb;">
+                    <th style="padding:8px;border:1px solid #e5e7eb;">#</th>
+                    <th style="padding:8px;border:1px solid #e5e7eb;">Sản phẩm</th>
+                    <th style="padding:8px;border:1px solid #e5e7eb;">SKU</th>
+                    <th style="padding:8px;border:1px solid #e5e7eb;">Màu</th>
+                    <th style="padding:8px;border:1px solid #e5e7eb;">SL</th>
+                    <th style="padding:8px;border:1px solid #e5e7eb;">Đơn giá</th>
+                    <th style="padding:8px;border:1px solid #e5e7eb;">Thành tiền</th>
+                  </tr>
+                </thead>
+                <tbody>${itemsRowsHtml}</tbody>
+              </table>
+
+              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                <tr><td style="padding:6px 0;color:#6b7280;">Tạm tính</td><td style="padding:6px 0;text-align:right;color:#111827;">${formatMoneyVnd(order.subtotal)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Phí vận chuyển</td><td style="padding:6px 0;text-align:right;color:#111827;">${formatMoneyVnd(order.shippingFee)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Giảm giá</td><td style="padding:6px 0;text-align:right;color:#111827;">-${formatMoneyVnd(order.discountAmount)}</td></tr>
+                <tr><td style="padding:10px 0 0;font-size:16px;font-weight:700;color:#111827;">Tổng thanh toán</td><td style="padding:10px 0 0;text-align:right;font-size:16px;font-weight:700;color:#111827;">${formatMoneyVnd(order.totalAmount)}</td></tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+    const sent = await sendMail({
+      to,
+      subject,
+      html,
+      text
+    });
+
+    if (!sent) {
+      logger.warn(`Không thể gửi email đơn hàng ${order.orderCode} tới ${to}`);
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    logger.error(`Lỗi gửi email đơn hàng: ${(error as Error).message}`);
+    return false;
+  }
+};
 
 const toDateKey = (value: Date) => {
   return value.toISOString().slice(0, 10);
@@ -79,6 +321,17 @@ interface VariantSalesAggregateItem {
   revenue: number;
 }
 
+const customer = await UserModel.findById(userObjectId).select('email fullName').lean();
+
+  if (customer?.email) {
+    await sendOrderLifecycleMail({
+      to: customer.email,
+      customerName: customer.fullName,
+      order: created.toObject() as OrderMailSnapshot,
+      event: 'created',
+      paymentUrl
+    });
+  }
 const generateOrderCode = () => {
   const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const randomPart = crypto.randomInt(100000, 999999);
@@ -772,6 +1025,19 @@ export const updateOrderStatus = async ({
   });
 
   await order.save();
+  
+  const customer = await UserModel.findById(order.userId).select('email fullName').lean();
+
+  if (customer?.email) {
+    await sendOrderLifecycleMail({
+      to: customer.email,
+      customerName: customer.fullName,
+      order: order.toObject() as OrderMailSnapshot,
+      event: 'status_updated',
+      previousStatus,
+      note
+    });
+  }
 
   return order.toObject();
 };
