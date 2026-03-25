@@ -203,20 +203,30 @@ const uniqueSuffix = () => `${Date.now()}-${faker.string.alphanumeric(6).toLower
 
 const randomImage = (seed: string) => `https://picsum.photos/seed/${seed}/1000/1000`;
 
-const dropCollectionIfExists = async (collection: { name: string; drop: () => Promise<unknown> }) => {
+const clearCollections = async () => {
   try {
-    
-    await collection.drop();
+    await ProductVariantModel.collection.drop();
   } catch (error) {
     const code = (error as { code?: number })?.code;
-    const message = (error as Error).message?.toLowerCase() ?? '';
 
-    // Ignore "NamespaceNotFound" when collection does not exist yet.
-    
-    if (code !== 26 && !message.includes('ns not found')) {
+    if (code !== 26) {
       throw error;
     }
   }
+
+  await Promise.all([
+    ReviewModel.deleteMany({}),
+    OrderModel.deleteMany({}),
+    CartModel.deleteMany({}),
+    InventoryLogModel.deleteMany({}),
+    ProductModel.deleteMany({}),
+    VoucherModel.deleteMany({}),
+    AddressModel.deleteMany({}),
+    CategoryModel.deleteMany({}),
+    UserModel.deleteMany({}),
+    ColorModel.deleteMany({}),
+    SizeModel.deleteMany({})
+  ]);
 };
 const clearCollections = async () => {
   const collections = [

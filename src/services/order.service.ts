@@ -16,7 +16,7 @@ import { toPaginatedData } from '@/utils/pagination';
 import { verifyVnpayReturnSchema } from '@/validators/order.validator';
 import { StatusCodes } from 'http-status-codes';
 import { createVnpayPaymentUrl } from './vnpay.service';
-import { sendMail } from '@services/mail.service';
+import { ProductVariantModel } from '@/models/product-variant.model';
 
 interface CreaterOrderInput {
   addressId?: string;
@@ -484,7 +484,11 @@ export const createOrderFormCart = async (userId: string, input: CreaterOrderInp
   const subtotal = roundMoney(
     materializedItems.reduce((sum, item) => addMoney(sum, item.snapshot.total), 0)
   );
-  const { voucher, discountAmount } = await applyVoucherForSubtotal(input.voucherCode, subtotal);
+  const { voucher, discountAmount } = await applyVoucherForSubtotal(
+    input.voucherCode,
+    subtotal,
+    userId
+  );
   const shippingFee = input.shippingFee ?? 0;
   const totalAmount = subtractMoney(addMoney(subtotal, shippingFee), discountAmount);
   const paymentMethod = input.paymentMethod ?? 'cod';
@@ -596,7 +600,7 @@ export const listMyOrders = async (
     filters.status = options.status;
   }
 
-  const searchFilter = buildOrderSearchFilter(options.search);
+  const searchFilter = builtOrderSearchFilter(options.search);
 
   if (searchFilter) {
     Object.assign(filters, searchFilter);
@@ -629,7 +633,7 @@ export const listAllOrders = async (option: {
     filters.userId = toObjectId(options.userId, 'userId');
   }
 
-  const searchFilter = buildOrderSearchFilter(options.search);
+  const searchFilter = builtOrderSearchFilter(options.search);
 
   if (searchFilter) {
     Object.assign(filters, searchFilter);
