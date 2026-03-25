@@ -185,7 +185,7 @@ const sendOrderLifecycleMail = async ({
         ? `
       <p style="margin:0 0 12px;color:#374151;">
         Link thanh toán:
-        <a href="${paymentUrl}" style="color:#2563eb;word-break:break-all;">${escapeHtml(paymentUrl)}</a>
+          <a href="${escapeHtml(paymentUrl)}" style="color:#2563eb;word-break:break-all;">${escapeHtml(paymentUrl)}</a>
       </p>
     `
         : '';
@@ -1025,7 +1025,7 @@ export const updateOrderStatus = async ({
   });
 
   await order.save();
-  
+
   const customer = await UserModel.findById(order.userId).select('email fullName').lean();
 
   if (customer?.email) {
