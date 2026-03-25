@@ -90,7 +90,7 @@ export const createVariantSchema = z.object({
     productId: z.string().min(1)
   }),
   body: z.object({
-    sku: z.string().min(1).max(100),
+    sku: z.string().min(1).max(100).optional(),
     colorId: z.string().min(1).optional(),
     sizeId: z.string().min(1).optional(),
     size: z.string().min(1).max(50).optional(),

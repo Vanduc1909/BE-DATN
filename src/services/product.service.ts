@@ -26,7 +26,7 @@ interface ProductPayload {
 }
 
 interface ProductVariantPayload {
-  sku: string;
+  sku?: string;
   colorId?: string;
   sizeId?: string;
   size?: string;
@@ -202,6 +202,34 @@ const normalizeBrandSlug = (value: string) => {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+};
+const normalizeSkuToken = (value: string, fallback: string) => {
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return normalized || fallback;
+};
+
+const generateProductVariantSku = async (input: { productName: string; color?: string; size?: string }) => {
+  const productToken = normalizeSkuToken(input.productName, 'PRODUCT').slice(0, 12);
+  const colorToken = normalizeSkuToken(input.color ?? 'DEFAULT', 'DEFAULT').slice(0, 8);
+  const sizeToken = normalizeSkuToken(input.size ?? 'STANDARD', 'STANDARD').slice(0, 8);
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const timestampToken = Date.now().toString(36).toUpperCase();
+    const entropyToken = randomBytes(3).toString('hex').toUpperCase();
+    const candidateSku = `SKU-${productToken}-${colorToken}-${sizeToken}-${timestampToken}-${entropyToken}`;
+    const exists = await ProductVariantModel.exists({ sku: candidateSku });
+
+    if (!exists) {
+      return candidateSku;
+    }
+  }
+
+  throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Could not generate SKU');
 };
 
 const resolveProductBrandInput = async (payload: {
@@ -587,9 +615,11 @@ export const createProductVariant = async (productId: string, payload: ProductVa
   const normalizedColorId = payload.colorId?.trim();
   const normalizedSizeId = payload.sizeId?.trim();
   let normalizedSize = payload.size?.trim();
+  let normalizedColorName: string | undefined;
 
   if (normalizedColorId) {
-    await ensureColorExists(normalizedColorId);
+    const color = await ensureColorExists(normalizedColorId);
+    normalizedColorName = color.name?.trim();
   }
 
   if (normalizedSizeId) {
@@ -599,6 +629,15 @@ export const createProductVariant = async (productId: string, payload: ProductVa
       normalizedSize = size.name?.trim();
     }
   }
+
+  const normalizedSkuInput = payload.sku?.trim().toUpperCase();
+  const sku =
+    normalizedSkuInput ||
+    (await generateProductVariantSku({
+      productName: product.name,
+      color: normalizedColorName,
+      size: normalizedSize || 'Standard'
+    }));
 
   const stockQuantity = payload.stockQuantity ?? 0;
   const created = await ProductVariantModel.create({
@@ -613,7 +652,7 @@ export const createProductVariant = async (productId: string, payload: ProductVa
           sizeId: toObjectId(normalizedSizeId, 'sizeId')
         }
       : {}),
-    sku: payload.sku,
+    sku,
     size: normalizedSize || 'Standard',
     price: payload.price,
     originalPrice: payload.originalPrice,
