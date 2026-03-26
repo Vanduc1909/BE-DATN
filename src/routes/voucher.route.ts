@@ -23,6 +23,7 @@ const voucherRouter = Router();
 
 voucherRouter.get(
   '/available',
+  requireBearerAuth,
   validate(listAvailableVouchersSchema),
   listAvailableVouchersController
 );
