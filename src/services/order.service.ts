@@ -128,7 +128,8 @@ const escapeHtml = (value: string) => {
     .replaceAll("'", '&#39;');
 };
 
-const formatMoneyVnd = (value: number) => `${MONEY_FORMATTER.format(Math.max(0, roundMoney(value)))} ₫`;
+const formatMoneyVnd = (value: number) =>
+  `${MONEY_FORMATTER.format(Math.max(0, roundMoney(value)))} ₫`;
 
 const formatDateTime = (value?: Date | string) => {
   if (!value) {
@@ -323,15 +324,15 @@ interface VariantSalesAggregateItem {
 
 const customer = await UserModel.findById(userObjectId).select('email fullName').lean();
 
-  if (customer?.email) {
-    await sendOrderLifecycleMail({
-      to: customer.email,
-      customerName: customer.fullName,
-      order: created.toObject() as OrderMailSnapshot,
-      event: 'created',
-      paymentUrl
-    });
-  }
+if (customer?.email) {
+  await sendOrderLifecycleMail({
+    to: customer.email,
+    customerName: customer.fullName,
+    order: created.toObject() as OrderMailSnapshot,
+    event: 'created',
+    paymentUrl
+  });
+}
 const generateOrderCode = () => {
   const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const randomPart = crypto.randomInt(100000, 999999);
@@ -670,7 +671,8 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
     totalReviews,
     totalComments,
     totalItemsSoldAggregate,
-    topProducts
+    topProducts,
+    bottomProducts
   ] = await Promise.all([
     OrderModel.aggregate<{
       _id: null;
@@ -813,6 +815,11 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       .sort({ soldCount: -1, reviewCount: -1, createdAt: -1 })
       .limit(8)
       .select('name brand soldCount reviewCount averageRating isAvailable images')
+      .lean(),
+    ProductModel.find({})
+      .sort({ soldCount: 1, reviewCount: 1, createdAt: -1 })
+      .limit(8)
+      .select('name brand soldCount reviewCount averageRating isAvailable images')
       .lean()
   ]);
 
@@ -923,6 +930,16 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       byPaymentMethod
     },
     topProducts: topProducts.map((product) => ({
+      productId: String(product._id),
+      name: product.name,
+      brand: product.brand,
+      soldCount: product.soldCount,
+      reviewCount: product.reviewCount,
+      averageRating: product.averageRating,
+      isAvailable: product.isAvailable,
+      thumbnailUrl: product.images[0] ?? null
+    })),
+    bottomProducts: bottomProducts.map((product) => ({
       productId: String(product._id),
       name: product.name,
       brand: product.brand,
