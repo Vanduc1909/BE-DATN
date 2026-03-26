@@ -12,6 +12,7 @@ export interface VoucherDocument {
   startDate: Date;
   expirationDate: Date;
   usageLimit: number;
+  maxUsagePerUser: number;
   usedCount: number;
   isActive: boolean;
   createdAt: Date;
@@ -29,6 +30,7 @@ const voucherSchema = new Schema<VoucherDocument>(
     startDate: { type: Date, required: true },
     expirationDate: { type: Date, required: true },
     usageLimit: { type: Number, required: true, min: 0 },
+    maxUsagePerUser: { type: Number, required: true, min: 1 },
     usedCount: { type: Number, default: 0, min: 0 },
     isActive: { type: Boolean, default: true }
   },
