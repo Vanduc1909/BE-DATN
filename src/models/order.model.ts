@@ -77,7 +77,11 @@ const orderSchema = new Schema<OrderDocument>(
     shippingFee: { type: Number, default: 0, min: 0 },
     discountAmount: { type: Number, default: 0, min: 0 },
     totalAmount: { type: Number, required: true, min: 0 },
-    paymentMethod: { type: String, enum: ['cod', 'banking', 'momo', 'vnpay'], default: 'cod' },
+    paymentMethod: {
+      type: String,
+      enum: ['cod', 'banking', 'momo', 'vnpay', 'zalopay'],
+      default: 'cod'
+    },
     paymentStatus: {
       type: String,
       enum: ['pending', 'paid', 'failed', 'refunded'],
