@@ -47,6 +47,17 @@ interface RetryVnpayPaymentInput {
 interface ListOrderStatisticsOptions {
   days: number;
 }
+interface VariantSalesAggregateItem {
+  _id: unknown;
+  productId?: unknown;
+  productName?: string;
+  variantSku?: string;
+  variantColor?: string;
+  productImage?: string;
+  soldCount: number;
+  revenue: number;
+}
+
 
 interface DailyRevenueItem {
   date: string;
@@ -687,6 +698,9 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
     totalComments,
     totalItemsSoldAggregate,
     topProducts
+    bottomProducts,
+    topVariantsAggregate,
+    bottomVariantsAggregate
   ] = await Promise.all([
     OrderModel.aggregate<{
       _id: null;
@@ -829,7 +843,74 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       .sort({ soldCount: -1, reviewCount: -1, createdAt: -1 })
       .limit(8)
       .select('name brand soldCount reviewCount averageRating isAvailable images')
-      .lean()
+      .lean(),
+    OrderModel.aggregate<VariantSalesAggregateItem>([
+      {
+        $match: {
+          status: 'delivered'
+        }
+      },
+      {
+        $unwind: '$items'
+      },
+      {
+        $group: {
+          _id: '$items.variantId',
+          productId: { $first: '$items.productId' },
+          productName: { $first: '$items.productName' },
+          variantSku: { $first: '$items.variantSku' },
+          variantColor: { $first: '$items.variantColor' },
+          productImage: { $first: '$items.productImage' },
+          soldCount: { $sum: '$items.quantity' },
+          revenue: { $sum: '$items.total' }
+        }
+      },
+      {
+        $sort: {
+          soldCount: -1,
+          revenue: -1
+        }
+      },
+      {
+        $limit: 8
+      }
+    ]),
+    OrderModel.aggregate<VariantSalesAggregateItem>([
+      {
+        $match: {
+          status: 'delivered'
+        }
+      },
+      {
+        $unwind: '$items'
+      },
+      {
+        $group: {
+          _id: '$items.variantId',
+          productId: { $first: '$items.productId' },
+          productName: { $first: '$items.productName' },
+          variantSku: { $first: '$items.variantSku' },
+          variantColor: { $first: '$items.variantColor' },
+          productImage: { $first: '$items.productImage' },
+          soldCount: { $sum: '$items.quantity' },
+          revenue: { $sum: '$items.total' }
+        }
+      },
+      {
+        $match: {
+          soldCount: { $gt: 0 }
+        }
+      },
+      {
+        $sort: {
+          soldCount: 1,
+          revenue: 1
+        }
+      },
+      {
+        $limit: 8
+      }
+    ])
   ]);
 
   const summaryData = orderSummaryAggregate[0] ?? {
@@ -904,6 +985,38 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
 
     cursorDate.setDate(cursorDate.getDate() + 1);
   }
+  const variantIds = Array.from(
+    new Set(
+      [...topVariantsAggregate, ...bottomVariantsAggregate]
+        .map((item) => String(item._id ?? ''))
+        .filter(Boolean)
+    )
+  );
+  const variantDocs =
+    variantIds.length > 0
+      ? await ProductVariantModel.find({ _id: { $in: variantIds } })
+          .select('sku size stockQuantity isAvailable images')
+          .lean()
+      : [];
+  const variantMap = new Map(variantDocs.map((variant) => [String(variant._id), variant]));
+
+  const mapVariantStats = (item: VariantSalesAggregateItem) => {
+    const variant = variantMap.get(String(item._id));
+
+    return {
+      variantId: String(item._id),
+      productId: item.productId ? String(item.productId) : '',
+      productName: item.productName ?? 'N/A',
+      variantSku: variant?.sku ?? item.variantSku ?? '',
+      variantColor: item.variantColor ?? '',
+      size: typeof variant?.size === 'string' ? variant.size : 'Standard',
+      soldCount: item.soldCount ?? 0,
+      revenue: roundMoney(item.revenue ?? 0),
+      stockQuantity: variant?.stockQuantity ?? 0,
+      isAvailable: variant?.isAvailable ?? false,
+      thumbnailUrl: variant?.images?.[0] ?? item.productImage ?? null
+    };
+  };
 
   return {
     summary: {
@@ -947,7 +1060,9 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       averageRating: product.averageRating,
       isAvailable: product.isAvailable,
       thumbnailUrl: product.images[0] ?? null
-    }))
+    })),
+    topVariants: topVariantsAggregate.map((item) => mapVariantStats(item)),
+    bottomVariants: bottomVariantsAggregate.map((item) => mapVariantStats(item))
   };
 };
 
