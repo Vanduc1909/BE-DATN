@@ -27,6 +27,23 @@ const parseFeaturedLimit = (rawLimit: unknown) => {
 };
 
 export const listProductsController = asyncHandler(async (req, res) => {
+  const parseQueryList = (value: unknown) => {
+    if (Array.isArray(value)) {
+      return value
+        .flatMap((entry) => String(entry).split(','))
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    }
+
+    if (typeof value === 'string') {
+      return value
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    }
+
+    return [];
+  };
   const data = await listProducts({
     page: res.locals.pagination?.page ?? 1,
     limit: res.locals.pagination?.limit ?? 20,
