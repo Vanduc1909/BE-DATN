@@ -54,6 +54,15 @@ interface DailyRevenueItem {
   deliveredOrders: number;
 }
 
+interface CategoryBreakdownAggregateItem {
+  categoryId: unknown;
+  categoryName: string;
+  orders: number;
+  deliveredOrders: number;
+  items: number;
+  revenue: number;
+}
+
 const ORDER_STATUS_ORDER: OrderStatus[] = [
   'pending',
   'confirmed',
@@ -658,6 +667,7 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
     orderSummaryAggregate,
     statusAggregate,
     paymentMethodAggregate,
+    categoryAggregate,
     dailyAggregate,
     customersCount,
     staffCount,
@@ -743,6 +753,94 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
             }
           }
         }
+      }
+    ]),
+    OrderModel.aggregate<CategoryBreakdownAggregateItem>([
+      {
+        $match: {
+          createAt: {
+            $gte: fromDate,
+            $lte: toDate
+          }
+        }
+      },
+      {
+        $unwind: '$items'
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'items.productId',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      {
+        $unwind: {
+          path: '$product',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: 'categories',
+          localField: 'product.categoryId',
+          foreignField: '_id',
+          as: 'category'
+        }
+      },
+      {
+        $unwind: {
+          path: '$category',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $group: {
+          _id: {
+            categoryId: '$category._id',
+            categoryName: {
+              $ifNull: ['$category.name', 'Không xác định']
+            }
+          },
+          orderIds: { $addToSet: '$_id' },
+          deliveredOrderIds: {
+            $addToSet: {
+              $cond: [{ $eq: ['$status', 'delivered'] }, '$_id', null]
+            }
+          },
+          items: { $sum: '$items.quantity' },
+          revenue: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'delivered'] }, '$items.total', 0]
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          categoryId: '$_id.categoryId',
+          categoryName: '$_id.categoryName',
+          orders: { $size: '$orderIds' },
+          deliveredOrders: {
+            $size: {
+              $setDifference: ['$deliveredOrderIds', [null]]
+            }
+          },
+          items: 1,
+          revenue: 1
+        }
+      },
+      {
+        $sort: {
+          orders: -1,
+          item: -1,
+          categoryName: 1
+        }
+      },
+      {
+        $limit: 10
       }
     ]),
     OrderModel.aggregate<DailyRevenueItem & { _id: string }>([
@@ -868,6 +966,15 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
     };
   });
 
+  const byCategory = categoryAggregate.map((item) => ({
+    categoryId: item.categoryId ? String(item.categoryId) : null,
+    categoryName: item.categoryName,
+    orders: item.orders,
+    deliveredOrders: item.deliveredOrders,
+    items: item.items,
+    revenue: roundMoney(item.revenue)
+  }));
+
   const dailyAggregateMap = new Map(
     dailyAggregate.map((item) => [
       item._id,
@@ -927,7 +1034,8 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
     },
     breakdowns: {
       byStatus,
-      byPaymentMethod
+      byPaymentMethod,
+      byCategory
     },
     topProducts: topProducts.map((product) => ({
       productId: String(product._id),
