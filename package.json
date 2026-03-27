@@ -15,7 +15,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "seed": "ts-node -r tsconfig-paths/register scripts/seed.ts",
-    "seed:reset": "ts-node -r tsconfig-paths/register scripts/seed.ts --clear=true"
+    "seed:reset": "ts-node -r tsconfig-paths/register scripts/seed.ts --clear=true",
+    "seed:admins": "ts-node -r tsconfig-paths/register scripts/seed-admin.ts"
   },
   "keywords": [],
   "author": "",
