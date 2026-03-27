@@ -48,7 +48,15 @@ const envSchema = z.object({
   VNP_HASHSECRET: z.string().optional(),
   VNP_RETURNURL: z.string().optional(),
   VNP_TMNCODE: z.string().optional(),
-  VNP_URL: z.string().optional()
+  VNP_URL: z.string().optional(),
+
+  ZALOPAY_APP_ID: z.string().optional(),
+  ZALOPAY_KEY1: z.string().optional(),
+  ZALOPAY_KEY2: z.string().optional(),
+  ZALOPAY_CREATE_ENDPOINT: z.string().optional(),
+  ZALOPAY_QUERY_ENDPOINT: z.string().optional(),
+  ZALOPAY_CALLBACK_URL: z.string().optional(),
+  ZALOPAY_REDIRECT_URL: z.string().optional()
 });
 
 const parsedEnv = envSchema.parse(process.env);
