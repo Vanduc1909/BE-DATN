@@ -5,6 +5,8 @@ import { ApiError } from '@/utils/api-error';
 import { toObjectId } from '@/utils/object-id';
 import { toPaginatedData } from '@/utils/pagination';
 import { StatusCodes } from 'http-status-codes';
+import { UserModel } from '@models/user.model';
+import { emitStaffRealtimeNotification } from '@services/realtime-notification.service';
 
 interface CreateReviewInput {
   orderId: string;
@@ -266,6 +268,26 @@ export const createReview = async (userId: string, payload: CreateReviewInput) =
   });
 
   await recalculateProductRating(payload.productId);
+  const [author, product] = await Promise.all([
+    UserModel.findById(_userId).select('fullName email').lean(),
+    ProductModel.findById(_productId).select('name').lean()
+  ]);
+
+  emitStaffRealtimeNotification({
+    id: String(created._id),
+    type: 'review_created',
+    title: 'Đánh giá mới',
+    body: `${author?.fullName ?? author?.email ?? 'Khách hàng'} vừa đánh giá ${payload.rating} sao cho sản phẩm ${product?.name ?? 'N/A'}`,
+    createdAt: new Date().toISOString(),
+    url: '/dashboard/reviews',
+    metadata: {
+      reviewId: String(created._id),
+      productId: payload.productId,
+      orderId: payload.orderId,
+      rating: payload.rating,
+      authorId: userId
+    }
+  });
 
   return created.toObject();
 };

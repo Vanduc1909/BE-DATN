@@ -17,6 +17,7 @@ import { verifyVnpayReturnSchema } from '@/validators/order.validator';
 import { StatusCodes } from 'http-status-codes';
 import { createVnpayPaymentUrl } from './vnpay.service';
 import { ProductVariantModel } from '@/models/product-variant.model';
+import { emitStaffRealtimeNotification } from '@services/realtime-notification.service';
 
 interface CreaterOrderInput {
   addressId?: string;
@@ -562,6 +563,21 @@ export const createOrderFormCart = async (userId: string, input: CreaterOrderInp
       ipAddr: input.clientIp
     });
   }
+  emitStaffRealtimeNotification({
+    id: String(created._id),
+    type: 'order_created',
+    title: 'Đơn hàng mới',
+    body: `${customer?.fullName ?? created.shippingRecipientName} vừa tạo đơn ${created.orderCode} (${created.items.length} sản phẩm)`,
+    createdAt: new Date().toISOString(),
+    url: '/dashboard/orders',
+    metadata: {
+      orderId: String(created._id),
+      orderCode: created.orderCode,
+      userId: String(created.userId),
+      itemCount: created.items.length,
+      totalAmount: created.totalAmount
+    }
+  });
 
   return {
     ...created.toObject(),
