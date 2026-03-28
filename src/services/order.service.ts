@@ -1,11 +1,10 @@
 import { AddressModel } from '@/models/address.model';
 import { CartModel } from '@/models/cart.model';
 import { CommentModel } from '@/models/comment.model';
-import { OrderDocument, OrderModel } from '@/models/order.model';
-import { ProductModel } from '@/models/product.model';
-import { ReviewModel } from '@/models/review.model';
-import { UserModel } from '@/models/user.model';
-import { VoucherModel } from '@/models/voucher.model';
+import crypto from 'node:crypto';
+
+import { StatusCodes } from 'http-status-codes';
+
 import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/domain';
 import { logger } from '@config/logger';
 import { ApiError } from '@/utils/api-error';
@@ -66,6 +65,15 @@ interface DailyRevenueItem {
   deliveredOrders: number;
 }
 
+interface CategoryBreakdownAggregateItem {
+  categoryId: unknown;
+  categoryName: string;
+  orders: number;
+  deliveredOrders: number;
+  items: number;
+  revenue: number;
+}
+
 const ORDER_STATUS_ORDER: OrderStatus[] = [
   'pending',
   'confirmed',
@@ -76,7 +84,7 @@ const ORDER_STATUS_ORDER: OrderStatus[] = [
   'returned'
 ];
 
-const PAYMENT_METHOD_ORDER: PaymentMethod[] = ['cod', 'banking', 'momo', 'vnpay'];
+const PAYMENT_METHOD_ORDER: PaymentMethod[] = ['cod', 'banking', 'momo', 'vnpay', 'zalopay'];
 const MONEY_FORMATTER = new Intl.NumberFormat('vi-VN');
 
 const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
@@ -93,7 +101,8 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   cod: 'COD',
   banking: 'Chuyển khoản',
   momo: 'MoMo',
-  vnpay: 'VNPay'
+  vnpay: 'VNPay',
+  zalopay: 'ZaloPay'
 };
 
 const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
@@ -140,7 +149,8 @@ const escapeHtml = (value: string) => {
     .replaceAll("'", '&#39;');
 };
 
-const formatMoneyVnd = (value: number) => `${MONEY_FORMATTER.format(Math.max(0, roundMoney(value)))} ₫`;
+const formatMoneyVnd = (value: number) =>
+  `${MONEY_FORMATTER.format(Math.max(0, roundMoney(value)))} ₫`;
 
 const formatDateTime = (value?: Date | string) => {
   if (!value) {
@@ -335,15 +345,15 @@ interface VariantSalesAggregateItem {
 
 const customer = await UserModel.findById(userObjectId).select('email fullName').lean();
 
-  if (customer?.email) {
-    await sendOrderLifecycleMail({
-      to: customer.email,
-      customerName: customer.fullName,
-      order: created.toObject() as OrderMailSnapshot,
-      event: 'created',
-      paymentUrl
-    });
-  }
+if (customer?.email) {
+  await sendOrderLifecycleMail({
+    to: customer.email,
+    customerName: customer.fullName,
+    order: created.toObject() as OrderMailSnapshot,
+    event: 'created',
+    paymentUrl
+  });
+}
 const generateOrderCode = () => {
   const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const randomPart = crypto.randomInt(100000, 999999);
@@ -374,6 +384,35 @@ const generateUniqueVnpayTxnRef = async (orderCode: string) => {
   throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Không thể tạo mã giao dịch VNPay');
 };
 
+const ZALOPAY_TIMEZONE_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+const buildZalopayAppTransId = (orderCode: string, now = new Date()) => {
+  const date = new Date(now.getTime() + ZALOPAY_TIMEZONE_OFFSET_MS);
+  const year = String(date.getUTCFullYear()).slice(-2);
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const datePart = `${year}${month}${day}`;
+  const orderPart = orderCode
+    .replace(/[^A-Z0-9]/gi, '')
+    .toUpperCase()
+    .slice(-8);
+  const randomPart = crypto.randomInt(1000, 9999);
+
+  return `${datePart}_${orderPart}${randomPart}`;
+};
+
+const generateUniqueZalopayTxnRef = async (orderCode: string) => {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const candidate = buildZalopayAppTransId(orderCode);
+    const existed = await OrderModel.exists({ paymentTxnRef: candidate });
+
+    if (!existed) {
+      return candidate;
+    }
+  }
+
+  throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Không thể tạo mã giao dịch ZaloPay');
+};
 const resolveShippingInfo = async (userId: string, input: CreaterOrderInput) => {
   if (input.addressId) {
     const address = await AddressModel.findOne({
@@ -530,7 +569,11 @@ export const createOrderFormCart = async (userId: string, input: CreaterOrderInp
 
   const orderCode = generateOrderCode();
   const paymentTxnRef =
-    paymentMethod === 'vnpay' ? await generateUniqueVnpayTxnRef(orderCode) : undefined;
+    paymentMethod === 'vnpay'
+      ? await generateUniqueVnpayTxnRef(orderCode)
+      : paymentMethod === 'zalopay'
+        ? await generateUniqueZalopayTxnRef(orderCode)
+        : undefined;
 
   const created = await OrderModel.create({
     orderCode,
@@ -589,6 +632,29 @@ export const createOrderFormCart = async (userId: string, input: CreaterOrderInp
       totalAmount: created.totalAmount
     }
   });
+
+  if (paymentMethod === 'zalopay') {
+    const items = materializedItems.map((item) => ({
+      itemid: String(item.variant._id),
+      itemname: item.product.name,
+      itemprice: Math.round(item.variant.price),
+      itemquantity: item.snapshot.quantity
+    }));
+
+    const zalopayResult = await createZalopayPaymentUrl({
+      appTransId: paymentTxnRef ?? '',
+      appUser: String(userObjectId),
+      amount: totalAmount,
+      description: `Thanh toan don hang ${orderCode}`,
+      items,
+      embedData: {
+        orderId: String(created._id),
+        orderCode
+      }
+    });
+
+    paymentUrl = zalopayResult.orderUrl;
+  }
 
   return {
     ...created.toObject(),
@@ -684,6 +750,7 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
     orderSummaryAggregate,
     statusAggregate,
     paymentMethodAggregate,
+    categoryAggregate,
     dailyAggregate,
     customersCount,
     staffCount,
@@ -697,10 +764,8 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
     totalReviews,
     totalComments,
     totalItemsSoldAggregate,
-    topProducts
-    bottomProducts,
-    topVariantsAggregate,
-    bottomVariantsAggregate
+    topProducts,
+    bottomProducts
   ] = await Promise.all([
     OrderModel.aggregate<{
       _id: null;
@@ -771,6 +836,94 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
             }
           }
         }
+      }
+    ]),
+    OrderModel.aggregate<CategoryBreakdownAggregateItem>([
+      {
+        $match: {
+          createAt: {
+            $gte: fromDate,
+            $lte: toDate
+          }
+        }
+      },
+      {
+        $unwind: '$items'
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'items.productId',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      {
+        $unwind: {
+          path: '$product',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $lookup: {
+          from: 'categories',
+          localField: 'product.categoryId',
+          foreignField: '_id',
+          as: 'category'
+        }
+      },
+      {
+        $unwind: {
+          path: '$category',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $group: {
+          _id: {
+            categoryId: '$category._id',
+            categoryName: {
+              $ifNull: ['$category.name', 'Không xác định']
+            }
+          },
+          orderIds: { $addToSet: '$_id' },
+          deliveredOrderIds: {
+            $addToSet: {
+              $cond: [{ $eq: ['$status', 'delivered'] }, '$_id', null]
+            }
+          },
+          items: { $sum: '$items.quantity' },
+          revenue: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'delivered'] }, '$items.total', 0]
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          categoryId: '$_id.categoryId',
+          categoryName: '$_id.categoryName',
+          orders: { $size: '$orderIds' },
+          deliveredOrders: {
+            $size: {
+              $setDifference: ['$deliveredOrderIds', [null]]
+            }
+          },
+          items: 1,
+          revenue: 1
+        }
+      },
+      {
+        $sort: {
+          orders: -1,
+          item: -1,
+          categoryName: 1
+        }
+      },
+      {
+        $limit: 10
       }
     ]),
     OrderModel.aggregate<DailyRevenueItem & { _id: string }>([
@@ -844,73 +997,11 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       .limit(8)
       .select('name brand soldCount reviewCount averageRating isAvailable images')
       .lean(),
-    OrderModel.aggregate<VariantSalesAggregateItem>([
-      {
-        $match: {
-          status: 'delivered'
-        }
-      },
-      {
-        $unwind: '$items'
-      },
-      {
-        $group: {
-          _id: '$items.variantId',
-          productId: { $first: '$items.productId' },
-          productName: { $first: '$items.productName' },
-          variantSku: { $first: '$items.variantSku' },
-          variantColor: { $first: '$items.variantColor' },
-          productImage: { $first: '$items.productImage' },
-          soldCount: { $sum: '$items.quantity' },
-          revenue: { $sum: '$items.total' }
-        }
-      },
-      {
-        $sort: {
-          soldCount: -1,
-          revenue: -1
-        }
-      },
-      {
-        $limit: 8
-      }
-    ]),
-    OrderModel.aggregate<VariantSalesAggregateItem>([
-      {
-        $match: {
-          status: 'delivered'
-        }
-      },
-      {
-        $unwind: '$items'
-      },
-      {
-        $group: {
-          _id: '$items.variantId',
-          productId: { $first: '$items.productId' },
-          productName: { $first: '$items.productName' },
-          variantSku: { $first: '$items.variantSku' },
-          variantColor: { $first: '$items.variantColor' },
-          productImage: { $first: '$items.productImage' },
-          soldCount: { $sum: '$items.quantity' },
-          revenue: { $sum: '$items.total' }
-        }
-      },
-      {
-        $match: {
-          soldCount: { $gt: 0 }
-        }
-      },
-      {
-        $sort: {
-          soldCount: 1,
-          revenue: 1
-        }
-      },
-      {
-        $limit: 8
-      }
-    ])
+    ProductModel.find({})
+      .sort({ soldCount: 1, reviewCount: 1, createdAt: -1 })
+      .limit(8)
+      .select('name brand soldCount reviewCount averageRating isAvailable images')
+      .lean()
   ]);
 
   const summaryData = orderSummaryAggregate[0] ?? {
@@ -957,6 +1048,15 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       revenue: value?.revenue ?? 0
     };
   });
+
+  const byCategory = categoryAggregate.map((item) => ({
+    categoryId: item.categoryId ? String(item.categoryId) : null,
+    categoryName: item.categoryName,
+    orders: item.orders,
+    deliveredOrders: item.deliveredOrders,
+    items: item.items,
+    revenue: roundMoney(item.revenue)
+  }));
 
   const dailyAggregateMap = new Map(
     dailyAggregate.map((item) => [
@@ -1049,7 +1149,8 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
     },
     breakdowns: {
       byStatus,
-      byPaymentMethod
+      byPaymentMethod,
+      byCategory
     },
     topProducts: topProducts.map((product) => ({
       productId: String(product._id),
@@ -1061,8 +1162,16 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       isAvailable: product.isAvailable,
       thumbnailUrl: product.images[0] ?? null
     })),
-    topVariants: topVariantsAggregate.map((item) => mapVariantStats(item)),
-    bottomVariants: bottomVariantsAggregate.map((item) => mapVariantStats(item))
+    bottomProducts: bottomProducts.map((product) => ({
+      productId: String(product._id),
+      name: product.name,
+      brand: product.brand,
+      soldCount: product.soldCount,
+      reviewCount: product.reviewCount,
+      averageRating: product.averageRating,
+      isAvailable: product.isAvailable,
+      thumbnailUrl: product.images[0] ?? null
+    }))
   };
 };
 
@@ -1146,7 +1255,11 @@ export const updateOrderStatus = async ({
     await increaseSoldCount(order, -1);
   }
 
-  if (status === 'cancelled' && order.paymentMethod === 'vnpay' && order.paymentStatus === 'paid') {
+  if (
+    status === 'cancelled' &&
+    (order.paymentMethod === 'vnpay' || order.paymentMethod === 'zalopay') &&
+    order.paymentStatus === 'paid'
+  ) {
     order.paymentStatus = 'refunded';
     order.refundedAt = new Date();
   }
@@ -1216,8 +1329,8 @@ export const retryMyVnpayPayment = async ({
     throw new ApiError(StatusCodes.NOT_FOUND, 'Order not found');
   }
 
-  if (order.paymentMethod !== 'vnpay') {
-    throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Order is not paid by VNPay');
+  if (order.paymentMethod !== 'vnpay' && order.paymentMethod !== 'zalopay') {
+    throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Đơn hàng không dùng thanh toán online');
   }
 
   if (order.status !== 'pending') {
@@ -1231,7 +1344,10 @@ export const retryMyVnpayPayment = async ({
     throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Order already paid');
   }
 
-  const nextTxnRef = await generateUniqueVnpayTxnRef(order.orderCode);
+  const nextTxnRef =
+    order.paymentMethod === 'vnpay'
+      ? await generateUniqueVnpayTxnRef(order.orderCode)
+      : await generateUniqueZalopayTxnRef(order.orderCode);
   order.paymentTxnRef = nextTxnRef;
   order.paymentStatus = 'pending';
   order.paymentGatewayResponseCode = undefined;
@@ -1239,12 +1355,39 @@ export const retryMyVnpayPayment = async ({
   order.paidAt = undefined;
   await order.save();
 
-  const paymentUrl = createVnpayPaymentUrl({
-    txnRef: nextTxnRef,
-    amount: order.totalAmount,
-    orderInfo: `Thanh toan don hang ${order.orderCode}`,
-    ipAddr: clientIp
-  });
+  let paymentUrl: string | undefined;
+
+  if (order.paymentMethod === 'vnpay') {
+    paymentUrl = createVnpayPaymentUrl({
+      txnRef: nextTxnRef,
+      amount: order.totalAmount,
+      orderInfo: `Thanh toan don hang ${order.orderCode}`,
+      ipAddr: clientIp
+    });
+  }
+
+  if (order.paymentMethod === 'zalopay') {
+    const items = order.items.map((item) => ({
+      itemid: String(item.variantId),
+      itemname: item.productName,
+      itemprice: Math.round(item.price),
+      itemquantity: item.quantity
+    }));
+
+    const zalopayResult = await createZalopayPaymentUrl({
+      appTransId: nextTxnRef,
+      appUser: String(order.userId),
+      amount: order.totalAmount,
+      description: `Thanh toan don hang ${order.orderCode}`,
+      items,
+      embedData: {
+        orderId: String(order._id),
+        orderCode: order.orderCode
+      }
+    });
+
+    paymentUrl = zalopayResult.orderUrl;
+  }
 
   return {
     ...order.toObject(),
@@ -1290,5 +1433,128 @@ export const handleVnpayReturn = async (payload: Record<string, unknown>) => {
     order: order.toObject(),
     isSuccess: verifiedResult.isSuccess,
     responseCode: verifiedResult.responseCode
+  };
+};
+
+export const handleZalopayCallback = async (payload: Record<string, unknown>) => {
+  const verifyResult = verifyZalopayCallback(payload as { data: string; mac: string });
+
+  if (!verifyResult.isVerified) {
+    return {
+      return_code: 0,
+      return_message: 'Invalid ZaloPay signature'
+    };
+  }
+
+  const callbackData = verifyResult.data;
+  const appTransId = callbackData?.app_trans_id?.trim();
+
+  if (!appTransId) {
+    return {
+      return_code: 0,
+      return_message: 'Missing app_trans_id'
+    };
+  }
+
+  const order = await OrderModel.findOne({
+    paymentTxnRef: appTransId.toUpperCase()
+  });
+
+  if (!order) {
+    return {
+      return_code: 0,
+      return_message: 'Order not found'
+    };
+  }
+
+  if (order.paymentMethod !== 'zalopay') {
+    return {
+      return_code: 0,
+      return_message: 'Order payment method is not ZaloPay'
+    };
+  }
+
+  const returnCode = Number(callbackData?.return_code ?? 0);
+  order.paymentGatewayResponseCode = String(returnCode);
+
+  if (returnCode === 1) {
+    order.paymentStatus = 'paid';
+    order.paymentTransactionNo = callbackData?.zp_trans_id
+      ? String(callbackData.zp_trans_id)
+      : order.paymentTransactionNo;
+
+    if (!order.paidAt) {
+      order.paidAt = new Date();
+    }
+  } else if (order.paymentStatus !== 'paid' && order.paymentStatus !== 'refunded') {
+    order.paymentStatus = 'failed';
+  }
+
+  await order.save();
+
+  return {
+    return_code: 1,
+    return_message: 'success'
+  };
+};
+
+export const handleZalopayRedirect = async (payload: Record<string, unknown>) => {
+  const verifyResult = verifyZalopayRedirect(payload as Record<string, unknown>);
+
+  if (!verifyResult.isVerified) {
+    throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Invalid ZaloPay checksum');
+  }
+
+  const order = await OrderModel.findOne({
+    paymentTxnRef: verifyResult.appTransId.toUpperCase()
+  });
+
+  if (!order) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Order not found by ZaloPay transaction');
+  }
+
+  if (order.paymentMethod !== 'zalopay') {
+    throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Order payment method is not ZaloPay');
+  }
+
+  let responseCode = String(verifyResult.status);
+
+  if (verifyResult.status === 1 && order.paymentStatus !== 'paid') {
+    try {
+      const queryResult = await queryZalopayOrderStatus(verifyResult.appTransId);
+      responseCode = String(queryResult.returnCode);
+
+      if (queryResult.returnCode === 1) {
+        order.paymentStatus = 'paid';
+        order.paymentTransactionNo = queryResult.zpTransId ?? order.paymentTransactionNo;
+
+        if (!order.paidAt) {
+          order.paidAt = new Date();
+        }
+      } else if (
+        queryResult.returnCode !== 2 &&
+        order.paymentStatus !== 'paid' &&
+        order.paymentStatus !== 'refunded'
+      ) {
+        order.paymentStatus = 'failed';
+      }
+    } catch (error) {
+      logger.warn('ZaloPay query failed', error);
+    }
+  } else if (
+    verifyResult.status !== 1 &&
+    order.paymentStatus !== 'paid' &&
+    order.paymentStatus !== 'refunded'
+  ) {
+    order.paymentStatus = 'failed';
+  }
+
+  order.paymentGatewayResponseCode = responseCode;
+  await order.save();
+
+  return {
+    order: order.toObject(),
+    isSuccess: order.paymentStatus === 'paid',
+    responseCode
   };
 };

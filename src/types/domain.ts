@@ -13,7 +13,7 @@ export type OrderStatus =
   | 'cancelled'
   | 'returned';
 
-export type PaymentMethod = 'cod' | 'banking' | 'momo' | 'vnpay';
+export type PaymentMethod = 'cod' | 'banking' | 'momo' | 'vnpay' | 'zalopay';
 
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 

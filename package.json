@@ -15,7 +15,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "seed": "ts-node -r tsconfig-paths/register scripts/seed.ts",
-    "seed:reset": "ts-node -r tsconfig-paths/register scripts/seed.ts --clear=true"
+    "seed:reset": "ts-node -r tsconfig-paths/register scripts/seed.ts --clear=true",
+    "seed:admins": "ts-node -r tsconfig-paths/register scripts/seed-admin.ts"
   },
   "keywords": [],
   "author": "",
@@ -43,6 +44,7 @@
     "streamifier": "^0.1.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
+    "web-push": "^3.6.7",
     "winston": "^3.19.0",
     "zod": "^4.3.6"
   },
@@ -64,6 +66,7 @@
     "@types/supertest": "^6.0.3",
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
+    "@types/web-push": "^3.6.4",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
     "eslint": "^8.57.1",
