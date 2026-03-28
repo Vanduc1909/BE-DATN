@@ -1,16 +1,25 @@
-import { logger } from '@config/logger';
-import { sendBackofficeWebPushNotification } from '@services/push-notification.service';
+import { getSocketServer } from '@config/socket';
 
-if (io) {
-  io.to(STAFF_NOTIFICATION_ROOM).emit('staff:notification', payload);
+export const STAFF_NOTIFICATION_ROOM = 'backoffice:notifications';
+
+export type StaffNotificationType = 'order_created' | 'comment_created' | 'review_created';
+
+export interface StaffRealtimeNotificationPayload {
+  id: string;
+  type: StaffNotificationType;
+  title: string;
+  body: string;
+  createdAt: string;
+  url: string;
+  metadata?: Record<string, unknown>;
 }
 
-void sendBackofficeWebPushNotification({
-  title: payload.title,
-  body: payload.body,
-  url: payload.url,
-  tag: `staff-${payload.type}-${payload.id}`,
-  metadata: payload.metadata
-}).catch((error) => {
-  logger.error(`Failed to broadcast Web Push notification: ${(error as Error).message}`);
-});
+export const emitStaffRealtimeNotification = (payload: StaffRealtimeNotificationPayload) => {
+  const io = getSocketServer();
+
+  if (!io) {
+    return;
+  }
+
+  io.to(STAFF_NOTIFICATION_ROOM).emit('staff:notification', payload);
+};

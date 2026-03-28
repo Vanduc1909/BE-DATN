@@ -7,29 +7,16 @@ import { StatusCodes } from 'http-status-codes';
 
 import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/domain';
 import { logger } from '@config/logger';
-import { AddressModel } from '@models/address.model';
-import { CartModel } from '@models/cart.model';
-import { CommentModel } from '@models/comment.model';
-import { OrderModel, type OrderDocument } from '@models/order.model';
-import { ProductVariantModel } from '@models/product-variant.model';
-import { ProductModel } from '@models/product.model';
-import { ReviewModel } from '@models/review.model';
-import { UserModel } from '@models/user.model';
-import { sendMail } from '@services/mail.service';
-import { VoucherModel } from '@models/voucher.model';
-import { createVnpayPaymentUrl, verifyVnpayReturnParams } from '@services/vnpay.service';
-import {
-  createZalopayPaymentUrl,
-  queryZalopayOrderStatus,
-  verifyZalopayCallback,
-  verifyZalopayRedirect
-} from '@services/zalopay.service';
-import { applyVoucherForSubtotal } from '@services/voucher.service';
-import { ApiError } from '@utils/api-error';
-import { addMoney, roundMoney, subtractMoney } from '@utils/money';
-import { toObjectId } from '@utils/object-id';
-import { assertOrderTransitionAllowed } from '@utils/order-transition';
-import { toPaginatedData } from '@utils/pagination';
+import { ApiError } from '@/utils/api-error';
+import { addMoney, roundMoney, subtractMoney } from '@/utils/money';
+import { toObjectId } from '@/utils/object-id';
+import { assertOrderTransitionAllowed } from '@/utils/order-transition';
+import { toPaginatedData } from '@/utils/pagination';
+import { verifyVnpayReturnSchema } from '@/validators/order.validator';
+import { StatusCodes } from 'http-status-codes';
+import { createVnpayPaymentUrl } from './vnpay.service';
+import { ProductVariantModel } from '@/models/product-variant.model';
+import { emitStaffRealtimeNotification } from '@services/realtime-notification.service';
 
 interface CreaterOrderInput {
   addressId?: string;
@@ -59,6 +46,17 @@ interface RetryVnpayPaymentInput {
 interface ListOrderStatisticsOptions {
   days: number;
 }
+interface VariantSalesAggregateItem {
+  _id: unknown;
+  productId?: unknown;
+  productName?: string;
+  variantSku?: string;
+  variantColor?: string;
+  productImage?: string;
+  soldCount: number;
+  revenue: number;
+}
+
 
 interface DailyRevenueItem {
   date: string;
@@ -619,6 +617,21 @@ export const createOrderFormCart = async (userId: string, input: CreaterOrderInp
       ipAddr: input.clientIp
     });
   }
+  emitStaffRealtimeNotification({
+    id: String(created._id),
+    type: 'order_created',
+    title: 'Đơn hàng mới',
+    body: `${customer?.fullName ?? created.shippingRecipientName} vừa tạo đơn ${created.orderCode} (${created.items.length} sản phẩm)`,
+    createdAt: new Date().toISOString(),
+    url: '/dashboard/orders',
+    metadata: {
+      orderId: String(created._id),
+      orderCode: created.orderCode,
+      userId: String(created.userId),
+      itemCount: created.items.length,
+      totalAmount: created.totalAmount
+    }
+  });
 
   if (paymentMethod === 'zalopay') {
     const items = materializedItems.map((item) => ({
@@ -1072,6 +1085,38 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
 
     cursorDate.setDate(cursorDate.getDate() + 1);
   }
+  const variantIds = Array.from(
+    new Set(
+      [...topVariantsAggregate, ...bottomVariantsAggregate]
+        .map((item) => String(item._id ?? ''))
+        .filter(Boolean)
+    )
+  );
+  const variantDocs =
+    variantIds.length > 0
+      ? await ProductVariantModel.find({ _id: { $in: variantIds } })
+          .select('sku size stockQuantity isAvailable images')
+          .lean()
+      : [];
+  const variantMap = new Map(variantDocs.map((variant) => [String(variant._id), variant]));
+
+  const mapVariantStats = (item: VariantSalesAggregateItem) => {
+    const variant = variantMap.get(String(item._id));
+
+    return {
+      variantId: String(item._id),
+      productId: item.productId ? String(item.productId) : '',
+      productName: item.productName ?? 'N/A',
+      variantSku: variant?.sku ?? item.variantSku ?? '',
+      variantColor: item.variantColor ?? '',
+      size: typeof variant?.size === 'string' ? variant.size : 'Standard',
+      soldCount: item.soldCount ?? 0,
+      revenue: roundMoney(item.revenue ?? 0),
+      stockQuantity: variant?.stockQuantity ?? 0,
+      isAvailable: variant?.isAvailable ?? false,
+      thumbnailUrl: variant?.images?.[0] ?? item.productImage ?? null
+    };
+  };
 
   return {
     summary: {

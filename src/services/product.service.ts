@@ -64,6 +64,12 @@ interface BrandSnapshot {
   name?: string;
   isActive?: boolean;
 }
+interface StorefrontColorSnapshot {
+  _id: unknown;
+  name?: string;
+  hexCode?: string;
+  isActive?: boolean;
+}
 
 interface SizeSnapshot {
   _id: unknown;
@@ -189,7 +195,43 @@ const mapVariantResponse = (variant: Record<string, unknown>) => {
     size: sizeInfo.size
   };
 };
+const normalizeQueryList = (value: string | undefined) => {
+  if (!value) {
+    return [];
+  }
 
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+};
+
+const parsePriceRanges = (ranges: string[] = []) => {
+  const parsed: Array<{ min?: number; max?: number }> = [];
+
+  for (const rawRange of ranges) {
+    const [minRaw, maxRaw] = rawRange.split('-');
+    const min = Number(minRaw);
+    const max = Number(maxRaw);
+
+    if (!Number.isFinite(min) && !Number.isFinite(max)) {
+      continue;
+    }
+
+    const range = {
+      min: Number.isFinite(min) ? min : undefined,
+      max: Number.isFinite(max) ? max : undefined
+    };
+
+    if (range.min === undefined && range.max === undefined) {
+      continue;
+    }
+
+    parsed.push(range);
+  }
+
+  return parsed;
+};
 const escapeRegex = (value: string) => {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 };
@@ -327,6 +369,8 @@ export const listProducts = async (options: {
   limit: number;
   categoryId?: string;
   brandId?: string;
+  colorIds?: string[];
+  priceRanges?: string[];
   brand?: string;
   search?: string;
   isAvailable?: boolean;
@@ -344,9 +388,62 @@ export const listProducts = async (options: {
   if (typeof options.isAvailable === 'boolean') {
     filters.isAvailable = options.isAvailable;
   }
+  const normalizedColorIds = (options.colorIds ?? [])
+    .map((colorId) => colorId.trim())
+    .filter(Boolean);
+  const priceRangeFilters = parsePriceRanges(options.priceRanges ?? []);
 
-  if (options.brand?.trim()) {
-    filters.brand = options.brand.trim();
+  if (normalizedColorIds.length > 0 || priceRangeFilters.length > 0) {
+    const baseProducts = await ProductModel.find(filters).select('_id').lean();
+    const baseProductIds = baseProducts.map((product) => toObjectId(String(product._id), 'productId'));
+
+    if (baseProductIds.length === 0) {
+      return toPaginatedData([], 0, options.page, options.limit);
+    }
+
+    const variantFilters: Record<string, unknown> = {
+      productId: { $in: baseProductIds }
+    };
+
+    if (normalizedColorIds.length > 0) {
+      variantFilters.colorId = {
+        $in: normalizedColorIds.map((colorId) => toObjectId(colorId, 'colorId'))
+      };
+    }
+
+    if (priceRangeFilters.length > 0) {
+      variantFilters.$or = priceRangeFilters.map((range) => {
+        const priceCondition: Record<string, number> = {};
+
+        if (range.min !== undefined) {
+          priceCondition.$gte = range.min;
+        }
+
+        if (range.max !== undefined) {
+          priceCondition.$lte = range.max;
+        }
+
+        return { price: priceCondition };
+      });
+    }
+
+    const matchedProductIds = (await ProductVariantModel.distinct('productId', variantFilters)).map(
+      (productId) => toObjectId(String(productId), 'productId')
+    );
+
+    if (matchedProductIds.length === 0) {
+      return toPaginatedData([], 0, options.page, options.limit);
+    }
+
+    filters._id = { $in: matchedProductIds };
+  }
+
+  const brandFilters = normalizeQueryList(options.brand);
+
+  if (brandFilters.length === 1) {
+    filters.brand = brandFilters[0];
+  } else if (brandFilters.length > 1) {
+    filters.brand = { $in: brandFilters };
   }
 
   if (options.search?.trim()) {
@@ -409,6 +506,30 @@ export const listProductFilters = async () => {
     }
   }
 
+  const productIds = products.map((product) => toObjectId(String(product._id), 'productId'));
+  const colorIds =
+    productIds.length > 0
+      ? await ProductVariantModel.distinct('colorId', {
+          productId: { $in: productIds },
+          colorId: { $ne: null }
+        })
+      : [];
+
+  const colors =
+    colorIds.length > 0
+      ? ((await ColorModel.find({
+          _id: { $in: colorIds },
+          isActive: true
+        })
+          .select('name hexCode')
+          .sort({ name: 1 })
+          .lean()) as StorefrontColorSnapshot[]).map((color) => ({
+          id: String(color._id),
+          name: color.name ?? 'Màu sắc',
+          hexCode: color.hexCode
+        }))
+      : [];
+
   const categories = categoryIds.size
     ? (
         (await CategoryModel.find({
@@ -445,7 +566,8 @@ export const listProductFilters = async () => {
 
   return {
     categories,
-    brands: Array.from(brands).sort((a, b) => a.localeCompare(b, 'vi'))
+   brands: Array.from(brands).sort((a, b) => a.localeCompare(b, 'vi')),
+    colors
   };
 };
 

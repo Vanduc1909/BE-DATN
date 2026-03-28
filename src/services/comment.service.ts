@@ -5,6 +5,9 @@ import { ApiError } from '@/utils/api-error';
 import { toObjectId } from '@/utils/object-id';
 import { toPaginatedData } from '@/utils/pagination';
 import { StatusCodes } from 'http-status-codes';
+import { UserModel } from '@models/user.model';
+import { emitStaffRealtimeNotification } from '@services/realtime-notification.service';
+
 
 interface CreateCommentInput {
   targetId: string;
@@ -70,15 +73,18 @@ const buildCommentSearchFilter = (search?: string) => {
 };
 
 const ensureTargetExists = async (targetId: string) => {
-  const exists = await ProductModel.exists({ _id: toObjectId(targetId, 'targetId') });
+  const product = await ProductModel.findById(toObjectId(targetId, 'targetId'))
+    .select('name')
+    .lean();
 
-  if (!exists) {
+  if (!product) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Product not found');
   }
+  return product;
 };
 
 export const createComment = async (userId: string, payload: CreateCommentInput) => {
-  await ensureTargetExists(payload.targetId);
+   const product = await ensureTargetExists(payload.targetId);
 
   if (payload.parentId) {
     const parent = await CommentModel.findById(toObjectId(payload.parentId, 'parentId')).lean();
@@ -105,6 +111,25 @@ export const createComment = async (userId: string, payload: CreateCommentInput)
     content: payload.content,
     parentId: payload.parentId ? toObjectId(payload.parentId, 'parentId') : undefined,
     isHidden: false
+  });
+  const author = await UserModel.findById(toObjectId(userId, 'userId'))
+    .select('fullName email')
+    .lean();
+
+  emitStaffRealtimeNotification({
+    id: String(created._id),
+    type: 'comment_created',
+    title: 'Bình luận mới',
+    body: `${author?.fullName ?? author?.email ?? 'Khách hàng'} vừa bình luận về sản phẩm ${product.name}`,
+    createdAt: new Date().toISOString(),
+    url: '/dashboard/comments',
+    metadata: {
+      commentId: String(created._id),
+      targetId: payload.targetId,
+      targetModel: payload.targetModel,
+      parentId: payload.parentId,
+      authorId: userId
+    }
   });
 
   return created.toObject();
