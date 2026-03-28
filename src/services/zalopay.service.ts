@@ -6,12 +6,18 @@ import crypto from 'node:crypto';
 interface ZalopayCreateOrderInput {
   appTransId: string;
   appUser: string;
+  appTime?: number;
   amount: number;
   description: string;
   items: Array<Record<string, unknown>>;
   embedData?: Record<string, unknown>;
+  preferredPaymentMethod?: string[];
+  bankCode?: string;
   callbackUrl?: string;
   redirectUrl?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
 }
 
 export interface ZalopayCreateOrderResult {
@@ -101,8 +107,20 @@ const signHmacSha256 = (key: string, data: string) => {
   return crypto.createHmac('sha256', key).update(data, 'utf8').digest('hex');
 };
 
-const buildEmbedData = (embedData?: Record<string, unknown>, redirectUrl?: string) => {
+const buildEmbedData = (
+  embedData?: Record<string, unknown>,
+  redirectUrl?: string,
+  preferredPaymentMethod?: string[]
+) => {
   const payload: Record<string, unknown> = { ...(embedData ?? {}) };
+
+  if (
+    Array.isArray(preferredPaymentMethod) &&
+    preferredPaymentMethod.length > 0 &&
+    !Object.prototype.hasOwnProperty.call(payload, 'preferred_payment_method')
+  ) {
+    payload.preferred_payment_method = preferredPaymentMethod;
+  }
 
   if (redirectUrl) {
     payload.redirecturl = redirectUrl;
@@ -127,26 +145,43 @@ export const createZalopayPaymentUrl = async (
   assertZalopayConfigured();
 
   const appId = env.ZALOPAY_APP_ID ?? '';
-  const appTime = Date.now();
+  const appTime = input.appTime ?? Date.now();
   const amount = Math.round(Math.max(0, input.amount));
   const item = JSON.stringify(input.items ?? []);
-  const embedData = buildEmbedData(input.embedData, input.redirectUrl);
+  const embedData = buildEmbedData(
+    input.embedData,
+    input.redirectUrl,
+    input.preferredPaymentMethod
+  );
 
   const payload: Record<string, string> = {
-    app_id: appId,
-    app_trans_id: input.appTransId,
-    app_user: input.appUser,
-    app_time: String(appTime),
+    appid: appId,
+    apptransid: input.appTransId,
+    appuser: input.appUser,
+    apptime: String(appTime),
     amount: String(amount),
+    embeddata: embedData,
     item,
-    embed_data: embedData,
-    description: input.description
+    description: input.description,
+    bankcode: input.bankCode ?? ''
   };
 
   const callbackUrl = input.callbackUrl ?? env.ZALOPAY_CALLBACK_URL;
 
   if (callbackUrl) {
     payload.callback_url = callbackUrl;
+  }
+
+  if (input.phone) {
+    payload.phone = input.phone;
+  }
+
+  if (input.email) {
+    payload.email = input.email;
+  }
+
+  if (input.address) {
+    payload.address = input.address;
   }
 
   const macData = [
@@ -175,22 +210,29 @@ export const createZalopayPaymentUrl = async (
 
   const data = (await response.json()) as {
     return_code?: number;
+    returncode?: number;
     return_message?: string;
+    returnmessage?: string;
     order_url?: string;
+    orderurl?: string;
     zp_trans_token?: string;
+    zptranstoken?: string;
   };
 
-  if (data.return_code !== 1 || !data.order_url) {
+  const returnCode = Number(data.return_code ?? data.returncode ?? 0);
+  const orderUrl = data.order_url ?? data.orderurl;
+  const returnMessage = data.return_message ?? data.returnmessage;
+  if (returnCode !== 1 || !orderUrl) {
     throw new ApiError(
       StatusCodes.BAD_GATEWAY,
-      data.return_message ? `ZaloPay: ${data.return_message}` : 'Không thể tạo giao dịch ZaloPay'
+      returnMessage ? `ZaloPay: ${returnMessage}` : 'Không thể tạo giao dịch ZaloPay'
     );
   }
 
   return {
     appTransId: input.appTransId,
-    orderUrl: data.order_url,
-    zpTransToken: data.zp_trans_token
+    orderUrl,
+    zpTransToken: data.zp_trans_token ?? data.zptranstoken
   };
 };
 
@@ -261,8 +303,8 @@ export const queryZalopayOrderStatus = async (appTransId: string): Promise<Zalop
   const mac = signHmacSha256(env.ZALOPAY_KEY1 ?? '', macData);
 
   const payload = new URLSearchParams({
-    app_id: appId,
-    app_trans_id: normalizedTransId,
+    appid: appId,
+    apptransid: normalizedTransId,
     mac
   });
 
@@ -280,13 +322,20 @@ export const queryZalopayOrderStatus = async (appTransId: string): Promise<Zalop
 
   const data = (await response.json()) as {
     return_code?: number;
+    returncode?: number;
     return_message?: string;
+    returnmessage?: string;
     zp_trans_id?: string | number;
+    zptransid?: string | number;
   };
 
+  const returnCode = Number(data.return_code ?? data.returncode ?? 0);
+  const returnMessage = String(data.return_message ?? data.returnmessage ?? '');
+  const zpTransId = data.zp_trans_id ?? data.zptransid;
+
   return {
-    returnCode: Number(data.return_code ?? 0),
-    returnMessage: String(data.return_message ?? ''),
-    zpTransId: data.zp_trans_id ? String(data.zp_trans_id) : undefined
+    returnCode,
+    returnMessage,
+    zpTransId: zpTransId ? String(zpTransId) : undefined
   };
 };

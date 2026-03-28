@@ -17,6 +17,7 @@ import { StatusCodes } from 'http-status-codes';
 import { createVnpayPaymentUrl } from './vnpay.service';
 import { ProductVariantModel } from '@/models/product-variant.model';
 import { emitStaffRealtimeNotification } from '@services/realtime-notification.service';
+import { createZalopayPaymentUrl } from './zalopay.service';
 
 interface CreaterOrderInput {
   addressId?: string;
@@ -56,7 +57,6 @@ interface VariantSalesAggregateItem {
   soldCount: number;
   revenue: number;
 }
-
 
 interface DailyRevenueItem {
   date: string;
@@ -650,7 +650,11 @@ export const createOrderFormCart = async (userId: string, input: CreaterOrderInp
       embedData: {
         orderId: String(created._id),
         orderCode
-      }
+      },
+      preferredPaymentMethod: ['zalopay_wallet'],
+      bankCode: '',
+      phone: created.shippingPhone,
+      address: created.shippingAddress
     });
 
     paymentUrl = zalopayResult.orderUrl;
@@ -1383,7 +1387,11 @@ export const retryMyVnpayPayment = async ({
       embedData: {
         orderId: String(order._id),
         orderCode: order.orderCode
-      }
+      },
+      preferredPaymentMethod: ['zalopay_wallet'],
+      bankCode: '',
+      phone: created.shippingPhone,
+      address: created.shippingAddress
     });
 
     paymentUrl = zalopayResult.orderUrl;
