@@ -11,9 +11,7 @@ interface ZalopayCreateOrderInput {
   description: string;
   items: Array<Record<string, unknown>>;
   embedData?: Record<string, unknown>;
-  preferredPaymentMethod?: string[];
   bankCode?: string;
-  callbackUrl?: string;
   redirectUrl?: string;
   phone?: string;
   email?: string;
@@ -107,20 +105,8 @@ const signHmacSha256 = (key: string, data: string) => {
   return crypto.createHmac('sha256', key).update(data, 'utf8').digest('hex');
 };
 
-const buildEmbedData = (
-  embedData?: Record<string, unknown>,
-  redirectUrl?: string,
-  preferredPaymentMethod?: string[]
-) => {
+const buildEmbedData = (embedData?: Record<string, unknown>, redirectUrl?: string) => {
   const payload: Record<string, unknown> = { ...(embedData ?? {}) };
-
-  if (
-    Array.isArray(preferredPaymentMethod) &&
-    preferredPaymentMethod.length > 0 &&
-    !Object.prototype.hasOwnProperty.call(payload, 'preferred_payment_method')
-  ) {
-    payload.preferred_payment_method = preferredPaymentMethod;
-  }
 
   if (redirectUrl) {
     payload.redirecturl = redirectUrl;
@@ -144,16 +130,12 @@ export const createZalopayPaymentUrl = async (
 ): Promise<ZalopayCreateOrderResult> => {
   assertZalopayConfigured();
 
-  const appId = env.ZALOPAY_APP_ID ?? '';
+  const appId = String(env.ZALOPAY_APP_ID ?? '').trim();
   const appTime = input.appTime ?? Date.now();
   const amount = Math.round(Math.max(0, input.amount));
   const item = JSON.stringify(input.items ?? []);
-  const embedData = buildEmbedData(
-    input.embedData,
-    input.redirectUrl,
-    input.preferredPaymentMethod
-  );
-
+  const embedData = buildEmbedData(input.embedData, input.redirectUrl);
+  const bankCode = String(input.bankCode ?? env.ZALOPAY_BANK_CODE ?? '').trim();
   const payload: Record<string, string> = {
     appid: appId,
     apptransid: input.appTransId,
@@ -163,14 +145,8 @@ export const createZalopayPaymentUrl = async (
     embeddata: embedData,
     item,
     description: input.description,
-    bankcode: input.bankCode ?? ''
+    bankcode: bankCode
   };
-
-  const callbackUrl = input.callbackUrl ?? env.ZALOPAY_CALLBACK_URL;
-
-  if (callbackUrl) {
-    payload.callback_url = callbackUrl;
-  }
 
   if (input.phone) {
     payload.phone = input.phone;
@@ -306,7 +282,7 @@ export const verifyZalopayRedirect = (
 export const queryZalopayOrderStatus = async (appTransId: string): Promise<ZalopayQueryResult> => {
   assertZalopayConfigured();
 
-  const appId = env.ZALOPAY_APP_ID ?? '';
+  const appId = String(env.ZALOPAY_APP_ID ?? '').trim();
   const normalizedTransId = appTransId.trim();
 
   const macData = `${appId}|${normalizedTransId}|${env.ZALOPAY_KEY1 ?? ''}`;
