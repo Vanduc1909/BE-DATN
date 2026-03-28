@@ -1,6 +1,12 @@
 import { Schema, type Types, model } from 'mongoose';
 
-import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/domain';
+import type {
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  RefundMethod,
+  ReturnRequestStatus
+} from '@/types/domain';
 
 export interface OrderItemSnapshot {
   productId: Types.ObjectId;
@@ -10,6 +16,29 @@ export interface OrderItemSnapshot {
   quantity: number;
   price: number;
   total: number;
+}
+export interface OrderReturnItem {
+  productId: Types.ObjectId;
+  productName: string;
+  variantId: Types.ObjectId;
+  variantSku: string;
+  quantity: number;
+  price: number;
+  total: number;
+}
+
+export interface OrderReturnRequest {
+  _id: Types.ObjectId;
+  requestedBy: Types.ObjectId;
+  status: ReturnRequestStatus;
+  refundMethod: RefundMethod;
+  refundAmount: number;
+  reason?: string;
+  note?: string;
+  refundEvidenceImages?: string[];
+  items: OrderReturnItem[];
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface OrderStatusHistory {
@@ -31,10 +60,18 @@ export interface OrderDocument {
   totalAmount: number;
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
+  paymentTxnRef?: string;
+  paymentTransactionNo?: string;
+  paymentGatewayResponseCode?: string;
+  paidAt?: Date;
+  refundedAt?: Date;
+  deliveredAt?: Date;
+  completedAt?: Date;
   voucherId?: Types.ObjectId;
   status: OrderStatus;
   items: OrderItemSnapshot[];
   statusHistory: OrderStatusHistory[];
+  returnRequests?: OrderReturnRequest[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,7 +93,7 @@ const statusHistorySchema = new Schema<OrderStatusHistory>(
   {
     status: {
       type: String,
-      enum: ['pending', 'confirmed', 'preparing', 'shipping', 'delivered', 'cancelled', 'returned'],
+      enum: ['pending', 'confirmed', 'shipping', 'delivered', 'completed', 'cancelled', 'returned'],
       required: true
     },
     changedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -64,6 +101,41 @@ const statusHistorySchema = new Schema<OrderStatusHistory>(
     changedAt: { type: Date, default: Date.now }
   },
   { _id: false }
+);
+
+const returnItemSchema = new Schema<OrderReturnItem>(
+  {
+    productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+    productName: { type: String, required: true },
+    variantId: { type: Schema.Types.ObjectId, ref: 'ProductVariant', required: true },
+    variantSku: { type: String, required: true },
+    quantity: { type: Number, required: true, min: 1 },
+    price: { type: Number, required: true, min: 0 },
+    total: { type: Number, required: true, min: 0 }
+  },
+  { _id: false }
+);
+
+const returnRequestSchema = new Schema<OrderReturnRequest>(
+  {
+    requestedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    status: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected', 'refunded'],
+      default: 'pending'
+    },
+    refundMethod: {
+      type: String,
+      enum: ['bank_transfer', 'wallet'],
+      default: 'bank_transfer'
+    },
+    refundAmount: { type: Number, required: true, min: 0 },
+    reason: { type: String },
+    note: { type: String },
+    refundEvidenceImages: [{ type: String }],
+    items: { type: [returnItemSchema], default: [] }
+  },
+  { timestamps: true }
 );
 
 const orderSchema = new Schema<OrderDocument>(
@@ -80,9 +152,11 @@ const orderSchema = new Schema<OrderDocument>(
     paymentMethod: { type: String, enum: ['cod', 'banking', 'momo', 'vnpay'], default: 'cod' },
     paymentStatus: {
       type: String,
-      enum: ['pending', 'paid', 'failed', 'refunded'],
+      enum: ['pending', 'confirmed', 'shipping', 'delivered', 'completed', 'cancelled', 'returned'],
       default: 'pending'
     },
+    deliveredAt: { type: Date },
+    completedAt: { type: Date },
     voucherId: { type: Schema.Types.ObjectId, ref: 'Voucher' },
     status: {
       type: String,
@@ -90,7 +164,8 @@ const orderSchema = new Schema<OrderDocument>(
       default: 'pending'
     },
     items: { type: [orderItemSchema], default: [] },
-    statusHistory: { type: [statusHistorySchema], default: [] }
+     statusHistory: { type: [statusHistorySchema], default: [] },
+    returnRequests: { type: [returnRequestSchema], default: [] }
   },
   { timestamps: true }
 );

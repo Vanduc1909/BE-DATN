@@ -20,7 +20,15 @@ export const listOrdersSchema = z.object({
     userId: z.string().optional(),
     search: z.string().optional(),
     status: z
-      .enum(['pending', 'confirmed', 'preparing', 'shipping', 'delivered', 'cancelled', 'returned'])
+      .enum([
+        'pending',
+        'confirmed',
+        'shipping',
+        'delivered',
+        'completed',
+        'cancelled',
+        'returned'
+      ])
       .optional()
   })
 });
@@ -56,7 +64,7 @@ export const updateOrderStatusSchema = z.object({
     status: z.enum([
       'pending',
       'confirmed',
-      'preparing',
+      'completed',
       'shipping',
       'delivered',
       'cancelled',
@@ -84,4 +92,35 @@ export const verifyVnpayReturnSchema = z.object({
       vnp_Amount: z.union([z.string(), z.number()]).optional()
     })
     .passthrough()
+});
+
+export const createReturnRequestSchema = z.object({
+  params: z.object({
+    orderId: z.string().min(1)
+  }),
+  body: z.object({
+    items: z
+      .array(
+        z.object({
+          variantId: z.string().min(1),
+          quantity: z.number().int().positive()
+        })
+      )
+      .min(1),
+    reason: z.string().max(500).optional(),
+    refundMethod: z.enum(['bank_transfer', 'wallet']).optional()
+  })
+});
+
+export const updateReturnRequestSchema = z.object({
+  params: z.object({
+    orderId: z.string().min(1),
+    returnRequestId: z.string().min(1)
+  }),
+  body: z.object({
+    status: z.enum(['pending', 'approved', 'rejected', 'refunded']),
+    refundMethod: z.enum(['bank_transfer', 'wallet']).optional(),
+    note: z.string().max(500).optional(),
+    refundEvidenceImages: z.array(z.string().min(1)).optional()
+  })
 });

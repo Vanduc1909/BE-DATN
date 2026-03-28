@@ -5,10 +5,10 @@ import { ApiError } from '@utils/api-error';
 
 const transitionMap: Record<OrderStatus, OrderStatus[]> = {
   pending: ['confirmed', 'cancelled'],
-  confirmed: ['preparing', 'cancelled'],
-  preparing: ['shipping', 'cancelled'],
-  shipping: ['delivered', 'returned'],
-  delivered: ['returned'],
+  confirmed: ['shipping', 'cancelled'],
+  shipping: ['delivered'],
+  delivered: ['completed'],
+  completed: ['returned'],
   cancelled: [],
   returned: []
 };

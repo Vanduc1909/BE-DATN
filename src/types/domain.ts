@@ -7,7 +7,7 @@ export type VoucherDiscountType = 'percentage' | 'fixed_amount';
 export type OrderStatus =
   | 'pending'
   | 'confirmed'
-  | 'preparing'
+  | 'completed'
   | 'shipping'
   | 'delivered'
   | 'cancelled'
@@ -16,6 +16,10 @@ export type OrderStatus =
 export type PaymentMethod = 'cod' | 'banking' | 'momo' | 'vnpay';
 
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
+
+export type ReturnRequestStatus = 'pending' | 'approved' | 'rejected' | 'refunded';
+
+export type RefundMethod = 'bank_transfer' | 'wallet';
 
 export type InventoryReason = 'import' | 'sale' | 'return' | 'adjustment' | 'damage';
 

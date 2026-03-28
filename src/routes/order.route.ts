@@ -1,10 +1,13 @@
 import {
   cancelMyOrderController,
+  confirmOrderReceivedController,
   createOrderController,
+  createReturnRequestController,
   getMyOrderByIdController,
   getOrderStatisticsController,
   listAllOrdersController,
   listMyOrdersController,
+  updateReturnRequestController
   retryMyVnpayPaymentController,
   updateOrderStatusController,
   verifyVnpayReturnController
@@ -18,6 +21,8 @@ import {
   createOrderSchema,
   listOrdersSchema,
   orderIdParamSchema,
+  createReturnRequestSchema,
+  updateReturnRequestSchema,
   orderStatisticsSchema,
   repayVnpayOrderSchema,
   updateOrderStatusSchema,
@@ -52,6 +57,34 @@ orderRouter.get(
 orderRouter.get('/:orderId', validate(orderIdParamSchema), getMyOrderByIdController);
 orderRouter.post('/:orderId/cancel', validate(cancelOrderSchema), cancelMyOrderController);
 orderRouter.post('/:orderId/repay', validate(repayVnpayOrderSchema), retryMyVnpayPaymentController);
+orderRouter.patch(
+  '/:orderId/status',
+  requireRoles('staff', 'admin'),
+  validate(updateOrderStatusSchema),
+  updateOrderStatusController
+);
+orderRouter.post(
+  '/:orderId/received',
+  validate(orderIdParamSchema),
+  confirmOrderReceivedController
+);
+orderRouter.post(
+  '/:orderId/return',
+  validate(createReturnRequestSchema),
+  createReturnRequestController
+);
+orderRouter.patch(
+  '/:orderId/return/:returnRequestId',
+  requireRoles('staff', 'admin'),
+  validate(updateReturnRequestSchema),
+  updateReturnRequestController
+);
+
+orderRouter.post(
+  '/:orderId/repay',
+  validate(repayVnpayOrderSchema),
+  retryMyVnpayPaymentController
+);
 orderRouter.patch(
   '/:orderId/status',
   requireRoles('staff', 'admin'),
