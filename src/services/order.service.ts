@@ -18,6 +18,7 @@ import { createVnpayPaymentUrl } from './vnpay.service';
 import { ProductVariantModel } from '@/models/product-variant.model';
 import { emitStaffRealtimeNotification } from '@services/realtime-notification.service';
 import { createZalopayPaymentUrl } from './zalopay.service';
+import { env } from '@/config/env';
 
 interface CreaterOrderInput {
   addressId?: string;
@@ -651,10 +652,7 @@ export const createOrderFormCart = async (userId: string, input: CreaterOrderInp
         orderId: String(created._id),
         orderCode
       },
-      preferredPaymentMethod: ['zalopay_wallet'],
-      bankCode: '',
-      phone: created.shippingPhone,
-      address: created.shippingAddress
+      bankCode: env.ZALOPAY_BANK_CODE
     });
 
     paymentUrl = zalopayResult.orderUrl;
@@ -1388,10 +1386,7 @@ export const retryMyVnpayPayment = async ({
         orderId: String(order._id),
         orderCode: order.orderCode
       },
-      preferredPaymentMethod: ['zalopay_wallet'],
-      bankCode: '',
-      phone: created.shippingPhone,
-      address: created.shippingAddress
+      bankCode: env.ZALOPAY_BANK_CODE
     });
 
     paymentUrl = zalopayResult.orderUrl;
