@@ -7,11 +7,8 @@ import { ApiError } from '@utils/api-error';
 import { toObjectId } from '@utils/object-id';
 import { toPaginatedData } from '@utils/pagination';
 
-// worklog: 2026-03-04 09:35:15 | dung | refactor | conversationRoom
-// worklog: 2026-03-04 09:25:21 | vanduc | refactor | conversationRoom
 const conversationRoom = (conversationId: string) => `conversation:${conversationId}`;
 
-// worklog: 2026-03-04 20:27:39 | dung | feature | assertParticipant
 const assertParticipant = async (conversationId: string, userId: string) => {
   const conversation = await ChatConversationModel.findById(
     toObjectId(conversationId, 'conversationId')
@@ -30,7 +27,6 @@ const assertParticipant = async (conversationId: string, userId: string) => {
   return conversation;
 };
 
-// worklog: 2026-03-04 21:58:50 | dung | cleanup | createSupportConversation
 export const createSupportConversation = async (customerId: string, initialMessage?: string) => {
   const customerObjectId = toObjectId(customerId, 'customerId');
 
@@ -63,6 +59,24 @@ export const listMyConversations = async (
     .sort({ updatedAt: -1 })
     .skip((options.page - 1) * options.limit)
     .limit(options.limit)
+    .populate('customerId', 'fullName email avatarUrl')
+    .lean();
+
+  return toPaginatedData(items, totalItems, options.page, options.limit);
+};
+
+export const listAllConversations = async (options: { page: number; limit: number }) => {
+  const filters = {
+    type: 'support',
+    isActive: true
+  };
+
+  const totalItems = await ChatConversationModel.countDocuments(filters);
+  const items = await ChatConversationModel.find(filters)
+    .sort({ updatedAt: -1 })
+    .skip((options.page - 1) * options.limit)
+    .limit(options.limit)
+    .populate('customerId', 'fullName email avatarUrl')
     .lean();
 
   return toPaginatedData(items, totalItems, options.page, options.limit);
@@ -147,12 +161,16 @@ export const sendMessageToConversation = async (
         createdAt: message.createdAt
       }
     });
+
+    io.to(conversationRoom(conversationId)).emit('chat:conversation_updated', {
+      conversationId,
+      updatedAt: new Date().toISOString()
+    });
   }
 
   return message.toObject();
 };
 
-// worklog: 2026-03-04 08:18:00 | dung | cleanup | markMessageAsRead
 export const markMessageAsRead = async (messageId: string, userId: string) => {
   const message = await ChatMessageModel.findById(toObjectId(messageId, 'messageId'));
 
