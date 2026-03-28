@@ -35,6 +35,7 @@ module.exports = {
       }
     ],
     '@typescript-eslint/consistent-type-imports': 'error',
+    'import/no-unresolved': 'off',
     '@typescript-eslint/no-unused-vars': [
       'error',
       {
