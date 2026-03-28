@@ -1,6 +1,7 @@
 import {
   createConversationController,
   joinConversationController,
+  listAllConversationsController,
   listMessagesController,
   listMyConversationsController,
   markMessageAsReadController,
@@ -29,6 +30,13 @@ chatRouter.get(
   validate(listConversationsSchema),
   parsePaginationMiddleware,
   listMyConversationsController
+);
+chatRouter.get(
+  '/conversations/all',
+  requireRoles('staff', 'admin'),
+  validate(listConversationsSchema),
+  parsePaginationMiddleware,
+  listAllConversationsController
 );
 chatRouter.post(
   '/conversations/:conversationId/join',

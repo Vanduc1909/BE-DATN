@@ -3,6 +3,7 @@ import { StatusCodes } from 'http-status-codes';
 import {
   createSupportConversation,
   joinConversationAsStaff,
+  listAllConversations,
   listConversationMessages,
   listMyConversations,
   markMessageAsRead,
@@ -36,6 +37,18 @@ export const createConversationController = asyncHandler(async (req, res) => {
 
 export const listMyConversationsController = asyncHandler(async (req, res) => {
   const data = await listMyConversations(getUserId(req), {
+    page: res.locals.pagination?.page ?? 1,
+    limit: res.locals.pagination?.limit ?? 20
+  });
+
+  return sendSuccess(res, {
+    message: 'Get conversations successfully',
+    data
+  });
+});
+
+export const listAllConversationsController = asyncHandler(async (req, res) => {
+  const data = await listAllConversations({
     page: res.locals.pagination?.page ?? 1,
     limit: res.locals.pagination?.limit ?? 20
   });
