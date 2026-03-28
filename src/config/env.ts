@@ -37,7 +37,10 @@ const envSchema = z.object({
   SMTP_SECURE: z.string().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
-   SMTP_FROM: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
+  WEB_PUSH_SUBJECT: z.string().optional(),
+  WEB_PUSH_PUBLIC_KEY: z.string().optional(),
+  WEB_PUSH_PRIVATE_KEY: z.string().optional(),
 
   FRONTEND_URL: z.string().default('http://localhost:3000'),
 
@@ -45,7 +48,16 @@ const envSchema = z.object({
   VNP_HASHSECRET: z.string().optional(),
   VNP_RETURNURL: z.string().optional(),
   VNP_TMNCODE: z.string().optional(),
-  VNP_URL: z.string().optional()
+  VNP_URL: z.string().optional(),
+
+  ZALOPAY_APP_ID: z.string().optional(),
+  ZALOPAY_KEY1: z.string().optional(),
+  ZALOPAY_KEY2: z.string().optional(),
+  ZALOPAY_BANK_CODE: z.string().optional(),
+  ZALOPAY_CREATE_ENDPOINT: z.string().optional(),
+  ZALOPAY_QUERY_ENDPOINT: z.string().optional(),
+  ZALOPAY_CALLBACK_URL: z.string().optional(),
+  ZALOPAY_REDIRECT_URL: z.string().optional()
 });
 
 const parsedEnv = envSchema.parse(process.env);
