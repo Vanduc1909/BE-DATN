@@ -213,6 +213,10 @@ export const createZalopayPaymentUrl = async (
     returncode?: number;
     return_message?: string;
     returnmessage?: string;
+    sub_return_code?: number;
+    sub_returncode?: number;
+    sub_return_message?: string;
+    sub_returnmessage?: string;
     order_url?: string;
     orderurl?: string;
     zp_trans_token?: string;
@@ -222,11 +226,17 @@ export const createZalopayPaymentUrl = async (
   const returnCode = Number(data.return_code ?? data.returncode ?? 0);
   const orderUrl = data.order_url ?? data.orderurl;
   const returnMessage = data.return_message ?? data.returnmessage;
+  const subReturnCode = Number(data.sub_return_code ?? data.sub_returncode ?? 0);
+  const subReturnMessage = data.sub_return_message ?? data.sub_returnmessage;
   if (returnCode !== 1 || !orderUrl) {
-    throw new ApiError(
-      StatusCodes.BAD_GATEWAY,
-      returnMessage ? `ZaloPay: ${returnMessage}` : 'Không thể tạo giao dịch ZaloPay'
-    );
+    const detail = [
+      returnMessage ? `ZaloPay: ${returnMessage}` : 'Không thể tạo giao dịch ZaloPay',
+      subReturnCode ? `sub:${subReturnCode}` : '',
+      subReturnMessage ? subReturnMessage : ''
+    ]
+      .filter(Boolean)
+      .join(' ');
+    throw new ApiError(StatusCodes.BAD_GATEWAY, detail);
   }
 
   return {
