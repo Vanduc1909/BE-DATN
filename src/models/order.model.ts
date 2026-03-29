@@ -85,7 +85,7 @@ const orderSchema = new Schema<OrderDocument>(
     },
     zalopayChannel: {
       type: String,
-      enum: ['wallet', 'bank_card']
+      enum: ['gateway', 'wallet', 'bank_card', 'atm']
     },
     paymentStatus: {
       type: String,

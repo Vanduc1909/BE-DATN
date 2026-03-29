@@ -15,7 +15,7 @@ export type OrderStatus =
 
 export type PaymentMethod = 'cod' | 'banking' | 'momo' | 'vnpay';
 
-export type ZalopayChannel = 'wallet' | 'bank_card';
+export type ZalopayChannel = 'gateway' | 'wallet' | 'bank_card' | 'atm';
 
 export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 

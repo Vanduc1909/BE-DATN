@@ -9,7 +9,7 @@ export const createOrderSchema = z.object({
     shippingFee: z.number().nonnegative().optional(),
     voucherCode: z.string().optional(),
     paymentMethod: z.enum(['cod', 'banking', 'momo', 'vnpay', 'zalopay']).optional(),
-    zalopayChannel: z.enum(['wallet', 'bank_card']).optional(),
+    zalopayChannel: z.enum(['gateway', 'wallet', 'bank_card', 'atm']).optional(),
     selectedVariantIds: z.array(z.string().min(1)).optional()
   })
 });
