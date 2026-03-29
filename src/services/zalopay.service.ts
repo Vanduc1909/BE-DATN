@@ -155,8 +155,7 @@ export const createZalopayPaymentUrl = async (
     description: input.description,
     mac
   });
-
-  if (input.bankCode?.trim()) {
+  if (typeof input.bankCode === 'string') {
     payload.append('bankcode', input.bankCode.trim());
   }
 
