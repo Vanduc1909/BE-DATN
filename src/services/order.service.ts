@@ -428,7 +428,11 @@ const resolveZalopayRedirectUrl = () => {
 };
 
 const resolveZalopayChannel = (channel?: ZalopayChannel): ZalopayChannel => {
-  return channel === 'bank_card' ? 'bank_card' : 'wallet';
+  if (channel === 'wallet' || channel === 'bank_card' || channel === 'atm') {
+    return channel;
+  }
+
+  return 'gateway';
 };
 
 const buildZalopayCheckoutConfig = (
@@ -437,21 +441,22 @@ const buildZalopayCheckoutConfig = (
 ) => {
   const normalizedChannel = resolveZalopayChannel(channel);
 
-  if (normalizedChannel === 'bank_card') {
-    return {
-      channel: normalizedChannel,
-      bankCode: '',
-      embedData: {
-        ...(embedData ?? {}),
-        bankgroup: 'ATM'
-      }
-    };
-  }
-
   return {
     channel: normalizedChannel,
-    bankCode: env.ZALOPAY_BANK_CODE?.trim() || 'zalopayapp',
-    embedData: embedData ?? {}
+    bankCode: '',
+    embedData: {
+      ...(embedData ?? {}),
+      ...(normalizedChannel === 'gateway'
+        ? {}
+        : {
+            preferred_payment_method:
+              normalizedChannel === 'wallet'
+                ? ['zalopay_wallet']
+                : normalizedChannel === 'bank_card'
+                  ? ['international_card']
+                  : ['domestic_card', 'account']
+          })
+    }
   };
 };
 
