@@ -2,7 +2,7 @@ import { AddressModel } from '@/models/address.model';
 import { CartModel } from '@/models/cart.model';
 import { CommentModel } from '@/models/comment.model';
 import crypto from 'node:crypto';
-import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/domain';
+import type { OrderStatus, PaymentMethod, PaymentStatus, ZalopayChannel } from '@/types/domain';
 import { logger } from '@config/logger';
 import { ApiError } from '@/utils/api-error';
 import { addMoney, roundMoney, subtractMoney } from '@/utils/money';
@@ -35,6 +35,7 @@ interface CreaterOrderInput {
   shippingFee?: number;
   voucherCode?: string;
   paymentMethod?: PaymentMethod;
+  zalopayChannel?: ZalopayChannel;
   selectedVariantIds?: string[];
   clientIp?: string;
 }
@@ -426,6 +427,34 @@ const resolveZalopayRedirectUrl = () => {
   return env.ZALOPAY_REDIRECT_URL?.trim() || `${env.FRONTEND_URL}/success`;
 };
 
+const resolveZalopayChannel = (channel?: ZalopayChannel): ZalopayChannel => {
+  return channel === 'bank_card' ? 'bank_card' : 'wallet';
+};
+
+const buildZalopayCheckoutConfig = (
+  channel?: ZalopayChannel,
+  embedData?: Record<string, unknown>
+) => {
+  const normalizedChannel = resolveZalopayChannel(channel);
+
+  if (normalizedChannel === 'bank_card') {
+    return {
+      channel: normalizedChannel,
+      bankCode: '',
+      embedData: {
+        ...(embedData ?? {}),
+        bankgroup: 'ATM'
+      }
+    };
+  }
+
+  return {
+    channel: normalizedChannel,
+    bankCode: env.ZALOPAY_BANK_CODE?.trim() || 'zalopayapp',
+    embedData: embedData ?? {}
+  };
+};
+
 const resolveShippingInfo = async (userId: string, input: CreaterOrderInput) => {
   if (input.addressId) {
     const address = await AddressModel.findOne({
@@ -556,6 +585,8 @@ export const createOrderFormCart = async (userId: string, input: CreaterOrderInp
   const shippingFee = input.shippingFee ?? 0;
   const totalAmount = subtractMoney(addMoney(subtotal, shippingFee), discountAmount);
   const paymentMethod = input.paymentMethod ?? 'cod';
+  const zalopayChannel =
+    paymentMethod === 'zalopay' ? resolveZalopayChannel(input.zalopayChannel) : undefined;
 
   for (const item of materializedItems) {
     item.variant.stockQuantity = Math.max(0, item.variant.stockQuantity - item.snapshot.quantity);
@@ -597,6 +628,7 @@ export const createOrderFormCart = async (userId: string, input: CreaterOrderInp
     discountAmount,
     totalAmount,
     paymentMethod,
+    zalopayChannel,
     paymentStatus: 'pending',
     paymentTxnRef,
     voucherId: voucher?._id,
@@ -654,17 +686,20 @@ export const createOrderFormCart = async (userId: string, input: CreaterOrderInp
       itemquantity: item.snapshot.quantity
     }));
 
+    const zalopayConfig = buildZalopayCheckoutConfig(input.zalopayChannel, {
+      orderId: String(created._id),
+      orderCode
+    });
+
     const zalopayResult = await createZalopayPaymentUrl({
       appTransId: paymentTxnRef ?? '',
       appUser: String(userObjectId),
       amount: totalAmount,
       description: `Thanh toan don hang ${orderCode}`,
       items,
-      embedData: {
-        orderId: String(created._id),
-        orderCode
-      },
-      bankCode: env.ZALOPAY_BANK_CODE
+      embedData: zalopayConfig.embedData,
+      bankCode: zalopayConfig.bankCode,
+      redirectUrl: resolveZalopayRedirectUrl()
     });
 
     paymentUrl = zalopayResult.orderUrl;
@@ -1388,17 +1423,19 @@ export const retryMyVnpayPayment = async ({
       itemquantity: item.quantity
     }));
 
+    const zalopayConfig = buildZalopayCheckoutConfig(order.zalopayChannel, {
+      orderId: String(order._id),
+      orderCode: order.orderCode
+    });
+
     const zalopayResult = await createZalopayPaymentUrl({
       appTransId: nextTxnRef,
       appUser: String(order.userId),
       amount: order.totalAmount,
       description: `Thanh toan don hang ${order.orderCode}`,
       items,
-      embedData: {
-        orderId: String(order._id),
-        orderCode: order.orderCode
-      },
-      bankCode: env.ZALOPAY_BANK_CODE ?? 'zalopayapp',
+      embedData: zalopayConfig.embedData,
+      bankCode: zalopayConfig.bankCode,
       redirectUrl: resolveZalopayRedirectUrl()
     });
 

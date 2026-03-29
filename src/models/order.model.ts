@@ -1,6 +1,6 @@
 import { Schema, type Types, model } from 'mongoose';
 
-import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/domain';
+import type { OrderStatus, PaymentMethod, PaymentStatus, ZalopayChannel } from '@/types/domain';
 
 export interface OrderItemSnapshot {
   productId: Types.ObjectId;
@@ -30,6 +30,7 @@ export interface OrderDocument {
   discountAmount: number;
   totalAmount: number;
   paymentMethod: PaymentMethod;
+  zalopayChannel?: ZalopayChannel;
   paymentStatus: PaymentStatus;
   voucherId?: Types.ObjectId;
   status: OrderStatus;
@@ -81,6 +82,10 @@ const orderSchema = new Schema<OrderDocument>(
       type: String,
       enum: ['cod', 'banking', 'momo', 'vnpay', 'zalopay'],
       default: 'cod'
+    },
+    zalopayChannel: {
+      type: String,
+      enum: ['wallet', 'bank_card']
     },
     paymentStatus: {
       type: String,
