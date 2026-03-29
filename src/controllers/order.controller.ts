@@ -1,21 +1,23 @@
+import { StatusCodes } from 'http-status-codes';
+
+import type { OrderStatus } from '@/types/domain';
 import {
   cancelMyOrder,
-  getMyOrderById,
-  getOrderStatistics,
   handleVnpayReturn,
+  getOrderStatistics,
+  getMyOrderById,
   listAllOrders,
   listMyOrders,
   retryMyVnpayPayment,
-  confirmOrderReceived,
-  createReturnRequest,
-  updateReturnRequest,
-  updateOrderStatus
-} from '@/services/order.service';
-import { OrderStatus } from '@/types/domain';
-import { ApiError } from '@/utils/api-error';
-import { asyncHandler } from '@/utils/async-handler';
-import { getOptionalParam, getParam } from '@/utils/response';
-import { StatusCodes } from 'http-status-codes';
+  updateOrderStatus,
+  handleZalopayRedirect,
+  handleZalopayCallback
+} from '@services/order.service';
+import { ApiError } from '@utils/api-error';
+import { asyncHandler } from '@utils/async-handler';
+import { getOptionalParam, getParam } from '@utils/request';
+import { sendSuccess } from '@utils/response';
+import type { Request } from 'express';
 
 const getUserId = (req: Request) => {
   const userId = req.user?.id;
@@ -152,7 +154,7 @@ export const retryMyVnpayPaymentController = asyncHandler(async (req, res) => {
   });
 
   return sendSuccess(res, {
-    message: 'Create VNPay payment URL successfully',
+    message: 'Create payment URL successfully',
     data
   });
 });
@@ -164,6 +166,21 @@ export const verifyVnpayReturnController = asyncHandler(async (req, res) => {
     message: 'Verify VNPay return successfully',
     data
   });
+});
+
+export const verifyZalopayRedirectController = asyncHandler(async (req, res) => {
+  const data = await handleZalopayRedirect(req.body as Record<string, unknown>);
+
+  return sendSuccess(res, {
+    message: 'Verify ZaloPay redirect successfully',
+    data
+  });
+});
+
+export const handleZalopayCallbackController = asyncHandler(async (req, res) => {
+  const data = await handleZalopayCallback(req.body as Record<string, unknown>);
+
+  return res.status(StatusCodes.OK).json(data);
 });
 
 export const updateOrderStatusController = asyncHandler(async (req, res) => {

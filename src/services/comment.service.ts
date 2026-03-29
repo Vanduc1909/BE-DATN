@@ -36,7 +36,6 @@ interface CommentUserSnapshot {
 interface CommentTargetProductSnapshot {
   _id: unknown;
   name?: string;
-  slug?: string;
   images?: string[];
 }
 
@@ -228,7 +227,6 @@ export const listAllComments = async (options: ListAllCommentsInput) => {
           },
           {
             name: 1,
-            slug: 1,
             images: 1
           }
         ).lean()
@@ -259,7 +257,6 @@ export const listAllComments = async (options: ListAllCommentsInput) => {
         id: targetId,
         targetModel,
         name: target?.name,
-        slug: target?.slug,
         thumbnailUrl: Array.isArray(target?.images) ? target.images[0] : undefined
       }
     };

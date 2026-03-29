@@ -12,7 +12,8 @@ const MESSAGE_MAP: Record<string, string> = {
   'endpoint is required': 'Thiếu endpoint',
   'At least one field is required': 'Cần ít nhất một trường',
   'brandId or brand is required': 'Cần brandId hoặc brand',
-  'New password must be different from current password': 'Mật khẩu mới phải khác mật khẩu hiện tại',
+  'New password must be different from current password':
+    'Mật khẩu mới phải khác mật khẩu hiện tại',
   'expirationDate must be greater than startDate': 'Ngày hết hạn phải sau ngày bắt đầu',
   'discountValue for percentage must be <= 100': 'Giá trị giảm theo % phải <= 100',
   'maxUsagePerUser must be smaller than usageLimit':
@@ -27,7 +28,6 @@ const MESSAGE_MAP: Record<string, string> = {
   'Product not found': 'Không tìm thấy sản phẩm',
   'Variant not found': 'Không tìm thấy biến thể',
   'Variant does not belong to product': 'Biến thể không thuộc sản phẩm',
-  'Variant does not belong to order': 'Sản phẩm không thuộc đơn hàng',
   'Variant is unavailable or out of stock': 'Biến thể không khả dụng hoặc đã hết hàng',
   'Address not found': 'Không tìm thấy địa chỉ',
   'Conversation not found': 'Không tìm thấy cuộc trò chuyện',
@@ -35,21 +35,12 @@ const MESSAGE_MAP: Record<string, string> = {
   'Message not found': 'Không tìm thấy tin nhắn',
   'Voucher not found': 'Không tìm thấy voucher',
   'Order is not eligible for review': 'Đơn hàng không đủ điều kiện đánh giá',
-  'Review already exists for this order and product':
-    'Đơn hàng này đã có đánh giá cho sản phẩm',
+  'Review already exists for this order and product': 'Đơn hàng này đã có đánh giá cho sản phẩm',
   'Review not found': 'Không tìm thấy đánh giá',
   'Order not found': 'Không tìm thấy đơn hàng',
   'Order not found by VNPay transaction': 'Không tìm thấy đơn hàng theo giao dịch VNPay',
   'Order payment method is not VNPay': 'Đơn hàng không dùng VNPay',
-  'Order not found by ZaloPay transaction': 'Không tìm thấy đơn hàng theo giao dịch ZaloPay',
-  'Order payment method is not ZaloPay': 'Đơn hàng không dùng ZaloPay',
   'Invalid VNPay signature': 'Chữ ký VNPay không hợp lệ',
-  'Invalid ZaloPay checksum': 'Checksum ZaloPay không hợp lệ',
-  'Order is not eligible for return': 'Đơn hàng chưa đủ điều kiện hoàn hàng',
-  'Return request not found': 'Không tìm thấy yêu cầu hoàn hàng',
-  'Return items are required': 'Cần chọn sản phẩm để hoàn hàng',
-  'Return quantity exceeds purchased quantity': 'Số lượng hoàn vượt quá số lượng đã mua',
-  'Refund evidence images are required': 'Cần ảnh minh chứng hoàn tiền',
   'Order already paid': 'Đơn hàng đã được thanh toán',
   'Order is not paid by VNPay': 'Đơn hàng không dùng VNPay',
   'Cart is empty': 'Giỏ hàng trống',
@@ -164,10 +155,64 @@ const MESSAGE_MAP: Record<string, string> = {
   'Cancel order successfully': 'Hủy đơn hàng thành công',
   'Create payment URL successfully': 'Tạo link thanh toán thành công',
   'Verify VNPay return successfully': 'Xác thực VNPay thành công',
-  'Verify ZaloPay redirect successfully': 'Xác thực ZaloPay thành công',
-  'Confirm order received successfully': 'Xác nhận đã nhận hàng thành công',
-  'Create return request successfully': 'Tạo yêu cầu hoàn hàng thành công',
-  'Update return request successfully': 'Cập nhật yêu cầu hoàn hàng thành công',
   'Update order status successfully': 'Cập nhật trạng thái đơn hàng thành công',
   'Get order statistics successfully': 'Lấy thống kê đơn hàng thành công',
   'Get chatbot response successfully': 'Lấy phản hồi chatbot thành công',
+  'Get inventory logs successfully': 'Lấy lịch sử tồn kho thành công',
+  'Adjust stock successfully': 'Điều chỉnh tồn kho thành công',
+  'Get courses successfully': 'Lấy danh sách khóa học thành công',
+  'Get course detail successfully': 'Lấy chi tiết khóa học thành công',
+  'Create course successfully': 'Tạo khóa học thành công',
+  'Update course successfully': 'Cập nhật khóa học thành công',
+  'Delete course successfully': 'Xóa khóa học thành công',
+  'Create module successfully': 'Tạo module thành công',
+  'Update module successfully': 'Cập nhật module thành công',
+  'Delete module successfully': 'Xóa module thành công',
+  'Create lesson successfully': 'Tạo bài học thành công',
+  'Update lesson successfully': 'Cập nhật bài học thành công',
+  'Delete lesson successfully': 'Xóa bài học thành công',
+  'Enroll user successfully': 'Ghi danh người dùng thành công',
+  'Get learning progress successfully': 'Lấy tiến độ học tập thành công',
+  'Complete lesson successfully': 'Hoàn thành bài học thành công',
+  'Upload image successfully': 'Tải ảnh lên thành công'
+};
+
+const translateByPattern = (message: string) => {
+  const missingMatch = /^Missing (.+)$/i.exec(message);
+  if (missingMatch) {
+    return `Thiếu ${missingMatch[1]}`;
+  }
+
+  const invalidMatch = /^Invalid (.+)$/i.exec(message);
+  if (invalidMatch) {
+    return `${invalidMatch[1]} không hợp lệ`;
+  }
+
+  const routeMatch = /^Route not found: (.+)$/i.exec(message);
+  if (routeMatch) {
+    return `Không tìm thấy route: ${routeMatch[1]}`;
+  }
+
+  const variantOutOfStockMatch = /^Variant (.+) is out of stock$/i.exec(message);
+  if (variantOutOfStockMatch) {
+    return `Biến thể ${variantOutOfStockMatch[1]} đã hết hàng`;
+  }
+
+  return null;
+};
+
+export const localizeMessage = (message?: string) => {
+  if (!message) {
+    return message ?? '';
+  }
+
+  const normalized = message.trim();
+  const mapped = MESSAGE_MAP[normalized];
+
+  if (mapped) {
+    return mapped;
+  }
+
+  const byPattern = translateByPattern(normalized);
+  return byPattern ?? normalized;
+};

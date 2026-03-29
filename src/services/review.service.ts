@@ -43,7 +43,6 @@ interface ReviewUserSnapshot {
 interface ReviewProductSnapshot {
   _id: unknown;
   name?: string;
-  slug?: string;
   images?: string[];
 }
 
@@ -83,7 +82,6 @@ const mapReviewProduct = (rawProduct: unknown) => {
     product: {
       id: String(product._id),
       name: product.name,
-      slug: product.slug,
       thumbnailUrl: Array.isArray(product.images) ? product.images[0] : undefined
     }
   };
@@ -201,7 +199,7 @@ export const listAllReviews = async (options: ListAllReviewsInput) => {
     .skip((options.page - 1) * options.limit)
     .limit(options.limit)
     .populate('userId', 'fullName avatarUrl email')
-    .populate('productId', 'name slug images')
+    .populate('productId', 'name images')
     .populate('repliedBy', 'fullName avatarUrl email')
     .lean();
 

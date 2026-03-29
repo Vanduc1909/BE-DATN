@@ -2,7 +2,6 @@ import { Schema, type Types, model } from 'mongoose';
 
 export interface ProductDocument {
   name: string;
-  slug: string;
   categoryId: Types.ObjectId;
   brandId?: Types.ObjectId;
   brand: string;
@@ -22,7 +21,6 @@ export interface ProductDocument {
 const productSchema = new Schema<ProductDocument>(
   {
     name: { type: String, required: true, trim: true },
-    slug: { type: String, required: true, unique: true, trim: true, lowercase: true },
     categoryId: { type: Schema.Types.ObjectId, ref: 'Category', required: true },
     brandId: { type: Schema.Types.ObjectId, ref: 'Brand' },
     brand: { type: String, required: true, trim: true, default: 'Generic' },
@@ -40,7 +38,6 @@ const productSchema = new Schema<ProductDocument>(
     timestamps: true
   }
 );
-
 
 productSchema.index({ categoryId: 1, isAvailable: 1 });
 productSchema.index({ brandId: 1, isAvailable: 1 });

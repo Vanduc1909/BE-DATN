@@ -11,6 +11,7 @@ import {
 import { asyncHandler } from '@utils/async-handler';
 import { getParam } from '@utils/request';
 import { sendSuccess } from '@utils/response';
+import { ApiError } from '@/utils/api-error';
 
 export const listVouchersController = asyncHandler(async (req, res) => {
   const data = await listVouchers({
@@ -32,9 +33,15 @@ export const listVouchersController = asyncHandler(async (req, res) => {
 export const listAvailableVouchersController = asyncHandler(async (req, res) => {
   const subtotalRaw = Number(req.query.subtotal);
   const subtotal = Number.isFinite(subtotalRaw) ? Math.max(subtotalRaw, 0) : 0;
+  const userId = req.user?.id;
+
+  if (!userId) {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, 'Unauthorized');
+  }
 
   const data = await listAvailableVouchersForCheckout({
-    subtotal
+    subtotal,
+    userId
   });
 
   return sendSuccess(res, {

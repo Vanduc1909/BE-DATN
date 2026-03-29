@@ -36,6 +36,7 @@ export const createVoucherSchema = z.object({
       startDate: z.string().datetime(),
       expirationDate: z.string().datetime(),
       usageLimit: z.number().int().positive(),
+      maxUsagePerUser: z.number().int().positive(),
       isActive: z.boolean().optional()
     })
     .superRefine((value, ctx) => {
@@ -57,6 +58,14 @@ export const createVoucherSchema = z.object({
           message: 'discountValue for percentage must be <= 100'
         });
       }
+
+      if (value.maxUsagePerUser >= value.usageLimit) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['maxUsagePerUser'],
+          message: 'maxUsagePerUser must be smaller than usageLimit'
+        });
+      }
     })
 });
 
@@ -74,6 +83,7 @@ export const updateVoucherSchema = z.object({
       startDate: z.string().datetime().optional(),
       expirationDate: z.string().datetime().optional(),
       usageLimit: z.number().int().nonnegative().optional(),
+      maxUsagePerUser: z.number().int().positive().optional(),
       isActive: z.boolean().optional()
     })
     .superRefine((value, ctx) => {
@@ -105,6 +115,18 @@ export const updateVoucherSchema = z.object({
           code: z.ZodIssueCode.custom,
           path: ['discountValue'],
           message: 'discountValue for percentage must be <= 100'
+        });
+      }
+
+      if (
+        typeof value.maxUsagePerUser === 'number' &&
+        typeof value.usageLimit === 'number' &&
+        value.maxUsagePerUser >= value.usageLimit
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['maxUsagePerUser'],
+          message: 'maxUsagePerUser must be smaller than usageLimit'
         });
       }
     })

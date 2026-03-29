@@ -8,7 +8,8 @@ export const createOrderSchema = z.object({
     shippingAddress: z.string().min(5).max(500).optional(),
     shippingFee: z.number().nonnegative().optional(),
     voucherCode: z.string().optional(),
-    paymentMethod: z.enum(['cod', 'banking', 'momo', 'vnpay']).optional(),
+    paymentMethod: z.enum(['cod', 'banking', 'momo', 'vnpay', 'zalopay']).optional(),
+    zalopayChannel: z.enum(['gateway', 'wallet', 'bank_card', 'atm']).optional(),
     selectedVariantIds: z.array(z.string().min(1)).optional()
   })
 });
@@ -94,33 +95,27 @@ export const verifyVnpayReturnSchema = z.object({
     .passthrough()
 });
 
-export const createReturnRequestSchema = z.object({
-  params: z.object({
-    orderId: z.string().min(1)
-  }),
-  body: z.object({
-    items: z
-      .array(
-        z.object({
-          variantId: z.string().min(1),
-          quantity: z.number().int().positive()
-        })
-      )
-      .min(1),
-    reason: z.string().max(500).optional(),
-    refundMethod: z.enum(['bank_transfer', 'wallet']).optional()
-  })
+export const verifyZalopayCallbackSchema = z.object({
+  body: z
+    .object({
+      data: z.string().min(1),
+      mac: z.string().min(1),
+      type: z.union([z.string(), z.number()]).optional()
+    })
+    .passthrough()
 });
 
-export const updateReturnRequestSchema = z.object({
-  params: z.object({
-    orderId: z.string().min(1),
-    returnRequestId: z.string().min(1)
-  }),
-  body: z.object({
-    status: z.enum(['pending', 'approved', 'rejected', 'refunded']),
-    refundMethod: z.enum(['bank_transfer', 'wallet']).optional(),
-    note: z.string().max(500).optional(),
-    refundEvidenceImages: z.array(z.string().min(1)).optional()
-  })
+export const verifyZalopayRedirectSchema = z.object({
+  body: z
+    .object({
+      appid: z.string().min(1),
+      apptransid: z.string().min(1),
+      pmcid: z.string().optional(),
+      bankcode: z.string().optional(),
+      amount: z.union([z.string(), z.number()]).optional(),
+      discountamount: z.union([z.string(), z.number()]).optional(),
+      status: z.union([z.string(), z.number()]).optional(),
+      checksum: z.string().min(1)
+    })
+    .passthrough()
 });
