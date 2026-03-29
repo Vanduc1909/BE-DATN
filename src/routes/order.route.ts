@@ -3,13 +3,11 @@ import {
   createOrderController,
   getMyOrderByIdController,
   getOrderStatisticsController,
-  handleZalopayCallbackController,
   listAllOrdersController,
   listMyOrdersController,
   retryMyVnpayPaymentController,
   updateOrderStatusController,
-  verifyVnpayReturnController,
-  verifyZalopayRedirectController
+  verifyVnpayReturnController
 } from '@/controllers/order.controller';
 import { requireBearerAuth } from '@/middlewares/auth.middleware';
 import { parsePaginationMiddleware } from '@/middlewares/pagination.middleware';
@@ -23,9 +21,7 @@ import {
   orderStatisticsSchema,
   repayVnpayOrderSchema,
   updateOrderStatusSchema,
-  verifyVnpayReturnSchema,
-  verifyZalopayCallbackSchema,
-  verifyZalopayRedirectSchema
+  verifyVnpayReturnSchema
 } from '@/validators/order.validator';
 import { Router } from 'express';
 
@@ -36,16 +32,7 @@ orderRouter.post(
   validate(verifyVnpayReturnSchema),
   verifyVnpayReturnController
 );
-orderRouter.post(
-  '/zalopay/callback',
-  validate(verifyZalopayCallbackSchema),
-  handleZalopayCallbackController
-);
-orderRouter.post(
-  '/zalopay/verify-redirect',
-  validate(verifyZalopayRedirectSchema),
-  verifyZalopayRedirectController
-);
+
 orderRouter.use(requireBearerAuth);
 orderRouter.post('/', validate(createOrderSchema), createOrderController);
 orderRouter.get('/', validate(listOrdersSchema), parsePaginationMiddleware, listMyOrdersController);

@@ -3,8 +3,6 @@ import { StatusCodes } from 'http-status-codes';
 import type { OrderStatus } from '@/types/domain';
 import {
   cancelMyOrder,
-  handleZalopayCallback,
-  handleZalopayRedirect,
   handleVnpayReturn,
   getOrderStatistics,
   getMyOrderById,
@@ -127,21 +125,6 @@ export const verifyVnpayReturnController = asyncHandler(async (req, res) => {
     message: 'Verify VNPay return successfully',
     data
   });
-});
-
-export const verifyZalopayRedirectController = asyncHandler(async (req, res) => {
-  const data = await handleZalopayRedirect(req.body as Record<string, unknown>);
-
-  return sendSuccess(res, {
-    message: 'Verify ZaloPay redirect successfully',
-    data
-  });
-});
-
-export const handleZalopayCallbackController = asyncHandler(async (req, res) => {
-  const data = await handleZalopayCallback(req.body as Record<string, unknown>);
-
-  return res.status(StatusCodes.OK).json(data);
 });
 
 export const updateOrderStatusController = asyncHandler(async (req, res) => {

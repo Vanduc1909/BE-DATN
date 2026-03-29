@@ -2,9 +2,6 @@ import { AddressModel } from '@/models/address.model';
 import { CartModel } from '@/models/cart.model';
 import { CommentModel } from '@/models/comment.model';
 import crypto from 'node:crypto';
-
-import { StatusCodes } from 'http-status-codes';
-
 import type { OrderStatus, PaymentMethod, PaymentStatus } from '@/types/domain';
 import { logger } from '@config/logger';
 import { ApiError } from '@/utils/api-error';
@@ -17,8 +14,10 @@ import { StatusCodes } from 'http-status-codes';
 import { createVnpayPaymentUrl } from './vnpay.service';
 import { ProductVariantModel } from '@/models/product-variant.model';
 import { emitStaffRealtimeNotification } from '@services/realtime-notification.service';
-import { createZalopayPaymentUrl } from './zalopay.service';
-import { env } from '@/config/env';
+import { OrderDocument, OrderModel } from '@/models/order.model';
+import { ReviewModel } from '@/models/review.model';
+import { ProductModel } from '@/models/product.model';
+import { UserModel } from '@/models/user.model';
 
 interface CreaterOrderInput {
   addressId?: string;
@@ -85,7 +84,7 @@ const ORDER_STATUS_ORDER: OrderStatus[] = [
   'returned'
 ];
 
-const PAYMENT_METHOD_ORDER: PaymentMethod[] = ['cod', 'banking', 'momo', 'vnpay', 'zalopay'];
+const PAYMENT_METHOD_ORDER: PaymentMethod[] = ['cod', 'banking', 'momo', 'vnpay'];
 const MONEY_FORMATTER = new Intl.NumberFormat('vi-VN');
 
 const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
@@ -102,8 +101,7 @@ const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   cod: 'COD',
   banking: 'Chuyển khoản',
   momo: 'MoMo',
-  vnpay: 'VNPay',
-  zalopay: 'ZaloPay'
+  vnpay: 'VNPay'
 };
 
 const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
@@ -385,35 +383,6 @@ const generateUniqueVnpayTxnRef = async (orderCode: string) => {
   throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Không thể tạo mã giao dịch VNPay');
 };
 
-const ZALOPAY_TIMEZONE_OFFSET_MS = 7 * 60 * 60 * 1000;
-
-const buildZalopayAppTransId = (orderCode: string, now = new Date()) => {
-  const date = new Date(now.getTime() + ZALOPAY_TIMEZONE_OFFSET_MS);
-  const year = String(date.getUTCFullYear()).slice(-2);
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  const datePart = `${year}${month}${day}`;
-  const orderPart = orderCode
-    .replace(/[^A-Z0-9]/gi, '')
-    .toUpperCase()
-    .slice(-8);
-  const randomPart = crypto.randomInt(1000, 9999);
-
-  return `${datePart}_${orderPart}${randomPart}`;
-};
-
-const generateUniqueZalopayTxnRef = async (orderCode: string) => {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const candidate = buildZalopayAppTransId(orderCode);
-    const existed = await OrderModel.exists({ paymentTxnRef: candidate });
-
-    if (!existed) {
-      return candidate;
-    }
-  }
-
-  throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Không thể tạo mã giao dịch ZaloPay');
-};
 const resolveShippingInfo = async (userId: string, input: CreaterOrderInput) => {
   if (input.addressId) {
     const address = await AddressModel.findOne({
@@ -570,11 +539,7 @@ export const createOrderFormCart = async (userId: string, input: CreaterOrderInp
 
   const orderCode = generateOrderCode();
   const paymentTxnRef =
-    paymentMethod === 'vnpay'
-      ? await generateUniqueVnpayTxnRef(orderCode)
-      : paymentMethod === 'zalopay'
-        ? await generateUniqueZalopayTxnRef(orderCode)
-        : undefined;
+    paymentMethod === 'vnpay' ? await generateUniqueVnpayTxnRef(orderCode) : undefined;
 
   const created = await OrderModel.create({
     orderCode,
@@ -633,30 +598,6 @@ export const createOrderFormCart = async (userId: string, input: CreaterOrderInp
       totalAmount: created.totalAmount
     }
   });
-
-  if (paymentMethod === 'zalopay') {
-    const items = materializedItems.map((item) => ({
-      itemid: String(item.variant._id),
-      itemname: item.product.name,
-      itemprice: Math.round(item.variant.price),
-      itemquantity: item.snapshot.quantity
-    }));
-
-    const zalopayResult = await createZalopayPaymentUrl({
-      appTransId: paymentTxnRef ?? '',
-      appUser: String(userObjectId),
-      amount: totalAmount,
-      description: `Thanh toan don hang ${orderCode}`,
-      items,
-      embedData: {
-        orderId: String(created._id),
-        orderCode
-      },
-      bankCode: env.ZALOPAY_BANK_CODE
-    });
-
-    paymentUrl = zalopayResult.orderUrl;
-  }
 
   return {
     ...created.toObject(),
@@ -1257,11 +1198,7 @@ export const updateOrderStatus = async ({
     await increaseSoldCount(order, -1);
   }
 
-  if (
-    status === 'cancelled' &&
-    (order.paymentMethod === 'vnpay' || order.paymentMethod === 'zalopay') &&
-    order.paymentStatus === 'paid'
-  ) {
+  if (status === 'cancelled' && order.paymentMethod === 'vnpay' && order.paymentStatus === 'paid') {
     order.paymentStatus = 'refunded';
     order.refundedAt = new Date();
   }
@@ -1331,8 +1268,8 @@ export const retryMyVnpayPayment = async ({
     throw new ApiError(StatusCodes.NOT_FOUND, 'Order not found');
   }
 
-  if (order.paymentMethod !== 'vnpay' && order.paymentMethod !== 'zalopay') {
-    throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Đơn hàng không dùng thanh toán online');
+  if (order.paymentMethod !== 'vnpay') {
+    throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Đơn hàng không dùng VNPay');
   }
 
   if (order.status !== 'pending') {
@@ -1346,10 +1283,7 @@ export const retryMyVnpayPayment = async ({
     throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Order already paid');
   }
 
-  const nextTxnRef =
-    order.paymentMethod === 'vnpay'
-      ? await generateUniqueVnpayTxnRef(order.orderCode)
-      : await generateUniqueZalopayTxnRef(order.orderCode);
+  const nextTxnRef = await generateUniqueVnpayTxnRef(order.orderCode);
   order.paymentTxnRef = nextTxnRef;
   order.paymentStatus = 'pending';
   order.paymentGatewayResponseCode = undefined;
@@ -1366,30 +1300,6 @@ export const retryMyVnpayPayment = async ({
       orderInfo: `Thanh toan don hang ${order.orderCode}`,
       ipAddr: clientIp
     });
-  }
-
-  if (order.paymentMethod === 'zalopay') {
-    const items = order.items.map((item) => ({
-      itemid: String(item.variantId),
-      itemname: item.productName,
-      itemprice: Math.round(item.price),
-      itemquantity: item.quantity
-    }));
-
-    const zalopayResult = await createZalopayPaymentUrl({
-      appTransId: nextTxnRef,
-      appUser: String(order.userId),
-      amount: order.totalAmount,
-      description: `Thanh toan don hang ${order.orderCode}`,
-      items,
-      embedData: {
-        orderId: String(order._id),
-        orderCode: order.orderCode
-      },
-      bankCode: env.ZALOPAY_BANK_CODE
-    });
-
-    paymentUrl = zalopayResult.orderUrl;
   }
 
   return {
@@ -1436,128 +1346,5 @@ export const handleVnpayReturn = async (payload: Record<string, unknown>) => {
     order: order.toObject(),
     isSuccess: verifiedResult.isSuccess,
     responseCode: verifiedResult.responseCode
-  };
-};
-
-export const handleZalopayCallback = async (payload: Record<string, unknown>) => {
-  const verifyResult = verifyZalopayCallback(payload as { data: string; mac: string });
-
-  if (!verifyResult.isVerified) {
-    return {
-      return_code: 0,
-      return_message: 'Invalid ZaloPay signature'
-    };
-  }
-
-  const callbackData = verifyResult.data;
-  const appTransId = callbackData?.app_trans_id?.trim();
-
-  if (!appTransId) {
-    return {
-      return_code: 0,
-      return_message: 'Missing app_trans_id'
-    };
-  }
-
-  const order = await OrderModel.findOne({
-    paymentTxnRef: appTransId.toUpperCase()
-  });
-
-  if (!order) {
-    return {
-      return_code: 0,
-      return_message: 'Order not found'
-    };
-  }
-
-  if (order.paymentMethod !== 'zalopay') {
-    return {
-      return_code: 0,
-      return_message: 'Order payment method is not ZaloPay'
-    };
-  }
-
-  const returnCode = Number(callbackData?.return_code ?? 0);
-  order.paymentGatewayResponseCode = String(returnCode);
-
-  if (returnCode === 1) {
-    order.paymentStatus = 'paid';
-    order.paymentTransactionNo = callbackData?.zp_trans_id
-      ? String(callbackData.zp_trans_id)
-      : order.paymentTransactionNo;
-
-    if (!order.paidAt) {
-      order.paidAt = new Date();
-    }
-  } else if (order.paymentStatus !== 'paid' && order.paymentStatus !== 'refunded') {
-    order.paymentStatus = 'failed';
-  }
-
-  await order.save();
-
-  return {
-    return_code: 1,
-    return_message: 'success'
-  };
-};
-
-export const handleZalopayRedirect = async (payload: Record<string, unknown>) => {
-  const verifyResult = verifyZalopayRedirect(payload as Record<string, unknown>);
-
-  if (!verifyResult.isVerified) {
-    throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Invalid ZaloPay checksum');
-  }
-
-  const order = await OrderModel.findOne({
-    paymentTxnRef: verifyResult.appTransId.toUpperCase()
-  });
-
-  if (!order) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'Order not found by ZaloPay transaction');
-  }
-
-  if (order.paymentMethod !== 'zalopay') {
-    throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Order payment method is not ZaloPay');
-  }
-
-  let responseCode = String(verifyResult.status);
-
-  if (verifyResult.status === 1 && order.paymentStatus !== 'paid') {
-    try {
-      const queryResult = await queryZalopayOrderStatus(verifyResult.appTransId);
-      responseCode = String(queryResult.returnCode);
-
-      if (queryResult.returnCode === 1) {
-        order.paymentStatus = 'paid';
-        order.paymentTransactionNo = queryResult.zpTransId ?? order.paymentTransactionNo;
-
-        if (!order.paidAt) {
-          order.paidAt = new Date();
-        }
-      } else if (
-        queryResult.returnCode !== 2 &&
-        order.paymentStatus !== 'paid' &&
-        order.paymentStatus !== 'refunded'
-      ) {
-        order.paymentStatus = 'failed';
-      }
-    } catch (error) {
-      logger.warn('ZaloPay query failed', error);
-    }
-  } else if (
-    verifyResult.status !== 1 &&
-    order.paymentStatus !== 'paid' &&
-    order.paymentStatus !== 'refunded'
-  ) {
-    order.paymentStatus = 'failed';
-  }
-
-  order.paymentGatewayResponseCode = responseCode;
-  await order.save();
-
-  return {
-    order: order.toObject(),
-    isSuccess: order.paymentStatus === 'paid',
-    responseCode
   };
 };
