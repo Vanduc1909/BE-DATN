@@ -72,6 +72,7 @@ export interface ZalopayQueryResult {
 
 const ZALOPAY_V1_CREATE_ENDPOINT = 'https://sandbox.zalopay.com.vn/v001/tpe/createorder';
 const ZALOPAY_V1_QUERY_ENDPOINT = 'https://sandbox.zalopay.com.vn/v001/tpe/getstatusbyapptransid';
+const ZALOPAY_REQUEST_TIMEOUT_MS = 10000;
 
 const signHmacSha256 = (key: string, data: string) => {
   return crypto.createHmac('sha256', key).update(data).digest('hex');
@@ -86,6 +87,10 @@ const isSameSignature = (left: string, right: string) => {
   }
 
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+};
+
+const isTimeoutLikeError = (error: unknown) => {
+  return error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
 };
 
 const requireZalopayConfig = () => {
@@ -162,13 +167,22 @@ export const createZalopayPaymentUrl = async (
   if (input.redirectUrl?.trim()) {
     payload.append('redirecturl', input.redirectUrl.trim());
   }
-  const response = await fetch(resolveZalopayCreateEndpoint(), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: payload
-  });
+  let response: Response;
+  try {
+    response = await fetch(resolveZalopayCreateEndpoint(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: payload,
+      signal: AbortSignal.timeout(ZALOPAY_REQUEST_TIMEOUT_MS)
+    });
+  } catch (error) {
+    if (isTimeoutLikeError(error)) {
+      throw new ApiError(StatusCodes.GATEWAY_TIMEOUT, 'ZaloPay không phản hồi kịp thời');
+    }
+    throw error;
+  }
 
   if (!response.ok) {
     throw new ApiError(StatusCodes.BAD_GATEWAY, 'Không thể tạo giao dịch ZaloPay');
@@ -285,13 +299,25 @@ export const queryZalopayOrderStatus = async (appTransId: string): Promise<Zalop
     apptransid: normalizedTransId,
     mac
   });
-  const response = await fetch(resolveZalopayQueryEndpoint(), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: payload
-  });
+  let response: Response;
+  try {
+    response = await fetch(resolveZalopayQueryEndpoint(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: payload,
+      signal: AbortSignal.timeout(ZALOPAY_REQUEST_TIMEOUT_MS)
+    });
+  } catch (error) {
+    if (isTimeoutLikeError(error)) {
+      throw new ApiError(
+        StatusCodes.GATEWAY_TIMEOUT,
+        'Không thể kiểm tra trạng thái ZaloPay kịp thời'
+      );
+    }
+    throw error;
+  }
 
   if (!response.ok) {
     throw new ApiError(StatusCodes.BAD_GATEWAY, 'Không thể truy vấn trạng thái ZaloPay');

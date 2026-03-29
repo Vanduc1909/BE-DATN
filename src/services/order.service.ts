@@ -2383,6 +2383,12 @@ export const handleZalopayRedirect = async (payload: Record<string, unknown>) =>
       }
     } catch (error) {
       logger.warn('ZaloPay query failed', error);
+
+      order.paymentStatus = 'paid';
+
+      if (!order.paidAt) {
+        order.paidAt = new Date();
+      }
     }
   } else if (
     verifyResult.status !== 1 &&
