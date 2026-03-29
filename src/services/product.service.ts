@@ -679,13 +679,20 @@ export const updateProduct = async (productId: string, payload: Partial<ProductP
 
 export const deleteProduct = async (productId: string) => {
   const _productId = toObjectId(productId, 'productId');
-  const deleted = await ProductModel.findByIdAndDelete(_productId).lean();
+  const deleted = await ProductModel.findByIdAndUpdate(
+    _productId,
+    { isAvailable: false },
+    { returnDocument: 'after' }
+  ).lean();
 
   if (!deleted) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Product not found');
   }
 
-  await ProductVariantModel.deleteMany({ productId: _productId });
+  await ProductVariantModel.updateMany(
+    { productId: _productId },
+    { isAvailable: false, stockQuantity: 0 }
+  );
 
   return {
     id: String(deleted._id)

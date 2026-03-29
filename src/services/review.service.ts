@@ -230,7 +230,7 @@ export const createReview = async (userId: string, payload: CreateReviewInput) =
   const order = await OrderModel.findOne({
     _id: _orderId,
     userId: _userId,
-    status: 'delivered'
+    status: 'completed'
   }).lean();
 
   if (!order) {

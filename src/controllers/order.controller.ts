@@ -67,6 +67,45 @@ export const listMyOrdersController = asyncHandler(async (req, res) => {
     data
   });
 });
+export const confirmOrderReceivedController = asyncHandler(async (req, res) => {
+  const data = await confirmOrderReceived(getUserId(req), getParam(req.params.orderId, 'orderId'));
+
+  return sendSuccess(res, {
+    message: 'Confirm order received successfully',
+    data
+  });
+});
+
+export const createReturnRequestController = asyncHandler(async (req, res) => {
+  const data = await createReturnRequest({
+    userId: getUserId(req),
+    orderId: getParam(req.params.orderId, 'orderId'),
+    items: req.body.items,
+    reason: req.body.reason,
+    refundMethod: req.body.refundMethod
+  });
+
+  return sendSuccess(res, {
+    message: 'Create return request successfully',
+    data
+  });
+});
+
+export const updateReturnRequestController = asyncHandler(async (req, res) => {
+  const data = await updateReturnRequest({
+    orderId: getParam(req.params.orderId, 'orderId'),
+    returnRequestId: getParam(req.params.returnRequestId, 'returnRequestId'),
+    status: req.body.status,
+    refundMethod: req.body.refundMethod,
+    note: req.body.note,
+    refundEvidenceImages: req.body.refundEvidenceImages
+  });
+
+  return sendSuccess(res, {
+    message: 'Update return request successfully',
+    data
+  });
+});
 
 export const listAllOrdersController = asyncHandler(async (req, res) => {
   const data = await listAllOrders({

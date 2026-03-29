@@ -1,4 +1,5 @@
 import { StatusCodes } from 'http-status-codes';
+import { ProductModel } from '@models/product.model';
 
 import { CategoryModel } from '@models/category.model';
 import { ApiError } from '@utils/api-error';
@@ -87,9 +88,18 @@ export const updateCategory = async (categoryId: string, payload: Partial<Catego
 };
 
 export const deleteCategory = async (categoryId: string) => {
-  const deleted = await CategoryModel.findByIdAndDelete(
-    toObjectId(categoryId, 'categoryId')
-  ).lean();
+  const targetId = toObjectId(categoryId, 'categoryId');
+  const fallback =
+    (await CategoryModel.findOne({ name: 'Không xác định' }).lean()) ??
+    (await CategoryModel.create({
+      name: 'Không xác định',
+      description: 'Danh mục mặc định khi danh mục cũ đã bị xóa.',
+      isActive: true
+    }));
+
+  await ProductModel.updateMany({ categoryId: targetId }, { categoryId: fallback._id });
+
+  const deleted = await CategoryModel.findByIdAndDelete(targetId).lean();
 
   if (!deleted) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Category not found');

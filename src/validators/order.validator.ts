@@ -21,7 +21,15 @@ export const listOrdersSchema = z.object({
     userId: z.string().optional(),
     search: z.string().optional(),
     status: z
-      .enum(['pending', 'confirmed', 'preparing', 'shipping', 'delivered', 'cancelled', 'returned'])
+      .enum([
+        'pending',
+        'confirmed',
+        'shipping',
+        'delivered',
+        'completed',
+        'cancelled',
+        'returned'
+      ])
       .optional()
   })
 });
@@ -57,7 +65,7 @@ export const updateOrderStatusSchema = z.object({
     status: z.enum([
       'pending',
       'confirmed',
-      'preparing',
+      'completed',
       'shipping',
       'delivered',
       'cancelled',
