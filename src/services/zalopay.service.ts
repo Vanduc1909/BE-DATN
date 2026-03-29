@@ -1,4 +1,5 @@
 import { env } from '@/config/env';
+import { logger } from '@/config/logger';
 import { ApiError } from '@/utils/api-error';
 import { PAYMENT_REQUIRED, StatusCodes } from 'http-status-codes';
 import crypto from 'node:crypto';
@@ -125,6 +126,8 @@ const safeJsonParse = <T>(value: string): T | null => {
   }
 };
 
+const isZalopayDebug = () => String(env.ZALOPAY_DEBUG ?? '').toLowerCase() === 'true';
+
 export const createZalopayPaymentUrl = async (
   input: ZalopayCreateOrderInput
 ): Promise<ZalopayCreateOrderResult> => {
@@ -147,6 +150,20 @@ export const createZalopayPaymentUrl = async (
     description: input.description,
     bankcode: bankCode
   };
+
+  if (isZalopayDebug()) {
+    logger.info('[ZaloPay] create payload', {
+      endpoint: env.ZALOPAY_CREATE_ENDPOINT,
+      appid: payload.appid ?? payload.app_id,
+      apptransid: payload.apptransid ?? payload.app_trans_id,
+      appuser: payload.appuser ?? payload.app_user,
+      apptime: payload.apptime ?? payload.app_time,
+      amount: payload.amount,
+      bankcode: payload.bankcode ?? payload.bank_code,
+      embeddataLength: String(payload.embeddata ?? payload.embed_data ?? '').length,
+      itemLength: String(payload.item ?? '').length
+    });
+  }
 
   if (input.phone) {
     payload.phone = input.phone;
@@ -204,6 +221,16 @@ export const createZalopayPaymentUrl = async (
   const returnMessage = data.return_message ?? data.returnmessage;
   const subReturnCode = Number(data.sub_return_code ?? data.sub_returncode ?? 0);
   const subReturnMessage = data.sub_return_message ?? data.sub_returnmessage;
+
+  if (isZalopayDebug()) {
+    logger.info('[ZaloPay] create response', {
+      returnCode,
+      returnMessage,
+      subReturnCode,
+      subReturnMessage
+    });
+  }
+
   if (returnCode !== 1 || !orderUrl) {
     const detail = [
       returnMessage ? `ZaloPay: ${returnMessage}` : 'Không thể tạo giao dịch ZaloPay',

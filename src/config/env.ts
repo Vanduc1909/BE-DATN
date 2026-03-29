@@ -54,6 +54,7 @@ const envSchema = z.object({
   ZALOPAY_KEY1: z.string().optional(),
   ZALOPAY_KEY2: z.string().optional(),
   ZALOPAY_BANK_CODE: z.string().optional(),
+  ZALOPAY_DEBUG: z.string().optional(),
   ZALOPAY_CREATE_ENDPOINT: z.string().optional(),
   ZALOPAY_QUERY_ENDPOINT: z.string().optional(),
   ZALOPAY_CALLBACK_URL: z.string().optional(),
