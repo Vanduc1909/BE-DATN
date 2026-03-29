@@ -8,7 +8,7 @@ export const createOrderSchema = z.object({
     shippingAddress: z.string().min(5).max(500).optional(),
     shippingFee: z.number().nonnegative().optional(),
     voucherCode: z.string().optional(),
-    paymentMethod: z.enum(['cod', 'banking', 'momo', 'vnpay', 'zalopay']).optional(),
+    paymentMethod: z.enum(['cod', 'banking', 'momo', 'vnpay']).optional(),
     selectedVariantIds: z.array(z.string().min(1)).optional()
   })
 });
@@ -82,31 +82,6 @@ export const verifyVnpayReturnSchema = z.object({
       vnp_TransactionNo: z.string().optional(),
       vnp_BankCode: z.string().optional(),
       vnp_Amount: z.union([z.string(), z.number()]).optional()
-    })
-    .passthrough()
-});
-
-export const verifyZalopayCallbackSchema = z.object({
-  body: z
-    .object({
-      data: z.string().min(1),
-      mac: z.string().min(1),
-      type: z.union([z.string(), z.number()]).optional()
-    })
-    .passthrough()
-});
-
-export const verifyZalopayRedirectSchema = z.object({
-  body: z
-    .object({
-      appid: z.string().min(1),
-      apptransid: z.string().min(1),
-      pmcid: z.string().optional(),
-      bankcode: z.string().optional(),
-      amount: z.union([z.string(), z.number()]).optional(),
-      discountamount: z.union([z.string(), z.number()]).optional(),
-      status: z.union([z.string(), z.number()]).optional(),
-      checksum: z.string().min(1)
     })
     .passthrough()
 });
