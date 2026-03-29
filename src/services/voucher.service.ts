@@ -38,6 +38,21 @@ export const listVouchers = async (options: {
     filters.code = new RegExp(options.code.trim(), 'i');
   }
 
+  const assertVoucherDiscountConfig = ({
+  discountType,
+  discountValue,
+  minOrderValue
+}: Pick<VoucherPayload, 'discountType' | 'discountValue' | 'minOrderValue'>) => {
+  const normalizedMinOrderValue = minOrderValue ?? 0;
+
+  if (discountType === 'fixed_amount' && discountValue >= normalizedMinOrderValue) {
+    throw new ApiError(
+      StatusCodes.UNPROCESSABLE_ENTITY,
+      'Giá trị giảm tiền cố định phải nhỏ hơn đơn tối thiểu'
+    );
+  }
+};
+
   const totalItems = await VoucherModel.countDocuments(filters);
   const items = await VoucherModel.find(filters)
     .sort({ createdAt: -1 })
@@ -148,7 +163,7 @@ export const updateVoucher = async (voucherId: string, payload: Partial<VoucherP
       'Voucher expiration date must be greater than start date'
     );
   }
-
+            
   const updated = await VoucherModel.findByIdAndUpdate(
     toObjectId(voucherId, 'voucherId'),
     payload,
