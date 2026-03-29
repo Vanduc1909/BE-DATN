@@ -625,47 +625,47 @@ const weightedPick = <T>(pool: Array<{ value: T; weight: number }>): T => {
 const pickOrderStatusByAge = (ageDays: number): OrderStatus => {
   if (ageDays >= 90) {
     return weightedPick<OrderStatus>([
-      { value: 'delivered', weight: 64 },
-      { value: 'cancelled', weight: 14 },
-      { value: 'returned', weight: 8 },
-      { value: 'shipping', weight: 6 },
-      { value: 'preparing', weight: 4 },
+      { value: 'completed', weight: 60 },
+      { value: 'delivered', weight: 10 },
+      { value: 'returned', weight: 10 },
+      { value: 'cancelled', weight: 10 },
+      { value: 'shipping', weight: 5 },
       { value: 'confirmed', weight: 3 },
-      { value: 'pending', weight: 1 }
+      { value: 'pending', weight: 2 }
     ]);
   }
 
   if (ageDays >= 45) {
     return weightedPick<OrderStatus>([
-      { value: 'delivered', weight: 48 },
+      { value: 'completed', weight: 40 },
+      { value: 'delivered', weight: 18 },
       { value: 'shipping', weight: 14 },
-      { value: 'preparing', weight: 12 },
       { value: 'confirmed', weight: 9 },
       { value: 'pending', weight: 7 },
       { value: 'cancelled', weight: 7 },
-      { value: 'returned', weight: 3 }
+      { value: 'returned', weight: 5 }
     ]);
   }
 
   if (ageDays >= 15) {
     return weightedPick<OrderStatus>([
-      { value: 'shipping', weight: 23 },
-      { value: 'preparing', weight: 20 },
+      { value: 'shipping', weight: 24 },
       { value: 'confirmed', weight: 18 },
       { value: 'pending', weight: 16 },
       { value: 'delivered', weight: 15 },
-      { value: 'cancelled', weight: 6 },
-      { value: 'returned', weight: 2 }
+      { value: 'completed', weight: 15 },
+      { value: 'cancelled', weight: 8 },
+      { value: 'returned', weight: 4 }
     ]);
   }
 
   return weightedPick<OrderStatus>([
-    { value: 'pending', weight: 33 },
+    { value: 'pending', weight: 34 },
     { value: 'confirmed', weight: 25 },
-    { value: 'preparing', weight: 20 },
-    { value: 'shipping', weight: 12 },
-    { value: 'delivered', weight: 7 },
-    { value: 'cancelled', weight: 3 }
+    { value: 'shipping', weight: 14 },
+    { value: 'delivered', weight: 12 },
+    { value: 'completed', weight: 9 },
+    { value: 'cancelled', weight: 6 }
   ]);
 };
 
@@ -675,18 +675,18 @@ const buildOrderTimeline = (status: OrderStatus): OrderStatus[] => {
       return ['pending'];
     case 'confirmed':
       return ['pending', 'confirmed'];
-    case 'preparing':
-      return ['pending', 'confirmed', 'preparing'];
     case 'shipping':
-      return ['pending', 'confirmed', 'preparing', 'shipping'];
+      return ['pending', 'confirmed', 'shipping'];
     case 'delivered':
-      return ['pending', 'confirmed', 'preparing', 'shipping', 'delivered'];
+      return ['pending', 'confirmed', 'shipping', 'delivered'];
+    case 'completed':
+      return ['pending', 'confirmed', 'shipping', 'delivered', 'completed'];
     case 'cancelled':
       return faker.datatype.boolean()
         ? ['pending', 'cancelled']
         : ['pending', 'confirmed', 'cancelled'];
     case 'returned':
-      return ['pending', 'confirmed', 'preparing', 'shipping', 'delivered', 'returned'];
+      return ['pending', 'confirmed', 'shipping', 'delivered', 'completed', 'returned'];
     default:
       return ['pending'];
   }
@@ -735,7 +735,7 @@ const buildStatusHistory = (
 };
 
 const resolvePaymentStatus = (status: OrderStatus, paymentMethod: PaymentMethod): PaymentStatus => {
-  if (status === 'delivered') {
+  if (status === 'delivered' || status === 'completed') {
     return 'paid';
   }
 
@@ -813,9 +813,9 @@ const seedOrders = async (
     const expectedProgressMinutes: Record<OrderStatus, number> = {
       pending: 0,
       confirmed: 6 * 60,
-      preparing: 20 * 60,
       shipping: 48 * 60,
       delivered: 6 * 24 * 60,
+      completed: 9 * 24 * 60,
       cancelled: 2 * 24 * 60,
       returned: 10 * 24 * 60
     };
