@@ -6,6 +6,7 @@ import { ChatMessageModel } from '@models/chat-message.model';
 import { ApiError } from '@utils/api-error';
 import { toObjectId } from '@utils/object-id';
 import { toPaginatedData } from '@utils/pagination';
+import { emitStaffRealtimeNotification } from './realtime-notification.service';
 
 const conversationRoom = (conversationId: string) => `conversation:${conversationId}`;
 
@@ -128,7 +129,7 @@ export const sendMessageToConversation = async (
   senderId: string,
   content: string
 ) => {
-  await assertParticipant(conversationId, senderId);
+  const conversation = await assertParticipant(conversationId, senderId);
 
   const message = await ChatMessageModel.create({
     conversationId: toObjectId(conversationId, 'conversationId'),
@@ -165,6 +166,23 @@ export const sendMessageToConversation = async (
     io.to(conversationRoom(conversationId)).emit('chat:conversation_updated', {
       conversationId,
       updatedAt: new Date().toISOString()
+    });
+  }
+
+  const customerId = conversation.customerId ? String(conversation.customerId) : null;
+
+  if (customerId && senderId === customerId) {
+    emitStaffRealtimeNotification({
+      id: String(message._id),
+      type: 'chat_message',
+      title: 'Tin nhắn mới từ khách hàng',
+      body: content.length > 120 ? `${content.slice(0, 117)}...` : content,
+      createdAt: new Date().toISOString(),
+      url: '/dashboard/support-chat',
+      metadata: {
+        conversationId,
+        customerId
+      }
     });
   }
 
