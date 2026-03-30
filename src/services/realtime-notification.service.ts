@@ -2,7 +2,11 @@ import { getSocketServer } from '@config/socket';
 
 export const STAFF_NOTIFICATION_ROOM = 'backoffice:notifications';
 
-export type StaffNotificationType = 'order_created' | 'comment_created' | 'review_created';
+export type StaffNotificationType =
+  | 'order_created'
+  | 'comment_created'
+  | 'review_created'
+  | 'chat_message';
 
 export interface StaffRealtimeNotificationPayload {
   id: string;
