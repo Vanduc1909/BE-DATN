@@ -1,6 +1,7 @@
 import { Schema, type Types, model } from 'mongoose';
 
 import type { OrderStatus, PaymentMethod, PaymentStatus, ZalopayChannel } from '@/types/domain';
+import { ref } from 'node:process';
 
 export interface OrderItemSnapshot {
   productId: Types.ObjectId;
@@ -42,6 +43,23 @@ export interface OrderStatusHistory {
   changedAt: Date;
 }
 
+export interface OrderCancelRefundRequest {
+  requestedBy: Types.ObjectId;
+  status: CancelRefundRequestStatus;
+  refundAmount: number;
+  bankCode: string;
+  bankName: string;
+  accountNumber: string;
+  accountHolder: string;
+  note?: string;
+  adminNote?: string;
+  refundEvidenceImages?: string[];
+  requestedAt: Date;
+  updatedAt: Date;
+  processedAt?: Date;
+  processedBy?: Types.ObjectId;
+}
+
 export interface OrderDocument {
   orderCode: string;
   userId: Types.ObjectId;
@@ -67,6 +85,7 @@ export interface OrderDocument {
   items: OrderItemSnapshot[];
   statusHistory: OrderStatusHistory[];
   returnRequests?: OrderReturnRequest[];
+  cancelRefundRequest?: OrderCancelRefundRequest;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -133,6 +152,30 @@ const returnRequestSchema = new Schema<OrderReturnRequest>(
   { timestamps: true }
 );
 
+const cancelRefundRequestSchema = new Schema<OrderCancelRefundRequest>(
+  {
+    requestedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    status: {
+      type: String,
+      enum: ['pending', 'rejected', 'refunded'],
+      default: 'pending'
+    },
+    refundAmount: { type: Number, required: true, min: 0 },
+    bankCode: { type: String, required: true, trim: true, uppercase: true },
+    bankName: { type: String, required: true, trim: true },
+    accountNumber: { type: String, required: true, trim: true },
+    accountHolder: { type: String, required: true, trim: true },
+    note: { type: String, trim: true },
+    adminNote: { type: String, trim: true },
+    refundEvidenceImages: [{ type: String }],
+    requestedAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
+    processedAt: { type: Date },
+    processedBy: { type: Schema.Types.ObjectId, ref: 'User' }
+  },
+  { _id: false }
+);
+
 const orderSchema = new Schema<OrderDocument>(
   {
     orderCode: { type: String, required: true, unique: true, trim: true, uppercase: true },
@@ -167,8 +210,9 @@ const orderSchema = new Schema<OrderDocument>(
       default: 'pending'
     },
     items: { type: [orderItemSchema], default: [] },
-     statusHistory: { type: [statusHistorySchema], default: [] },
-    returnRequests: { type: [returnRequestSchema], default: [] }
+    statusHistory: { type: [statusHistorySchema], default: [] },
+    returnRequests: { type: [returnRequestSchema], default: [] },
+    cancelRefundRequest: { type: cancelRefundRequestSchema }
   },
   { timestamps: true }
 );

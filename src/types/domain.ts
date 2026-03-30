@@ -21,6 +21,8 @@ export type PaymentStatus = 'pending' | 'paid' | 'failed' | 'refunded';
 
 export type ReturnRequestStatus = 'pending' | 'approved' | 'rejected' | 'refunded';
 
+export type CancelRefundRequestStatus = 'pending' | 'rejected' | 'refunded';
+
 export type RefundMethod = 'bank_transfer' | 'wallet';
 
 export type InventoryReason = 'import' | 'sale' | 'return' | 'adjustment' | 'damage';

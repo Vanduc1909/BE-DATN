@@ -12,7 +12,9 @@ import {
   retryMyVnpayPaymentController,
   updateOrderStatusController,
   verifyVnpayReturnController,
-  verifyZalopayRedirectController
+  verifyZalopayRedirectController,
+  createCancelRefundRequestController,
+  updateCancelRefundRequestController
 } from '@/controllers/order.controller';
 import { requireBearerAuth } from '@/middlewares/auth.middleware';
 import { parsePaginationMiddleware } from '@/middlewares/pagination.middleware';
@@ -30,7 +32,9 @@ import {
   updateOrderStatusSchema,
   verifyVnpayReturnSchema,
   verifyZalopayCallbackSchema,
-  verifyZalopayRedirectSchema
+  verifyZalopayRedirectSchema,
+  createCancelRefundRequestSchema,
+  updateCancelRefundRequestSchema
 } from '@/validators/order.validator';
 import { Router } from 'express';
 
@@ -87,13 +91,23 @@ orderRouter.post(
   validate(createReturnRequestSchema),
   createReturnRequestController
 );
+orderRouter.post(
+  '/:orderId/cancel-refund',
+  validate(createCancelRefundRequestSchema),
+  createCancelRefundRequestController
+);
 orderRouter.patch(
   '/:orderId/return/:returnRequestId',
   requireRoles('staff', 'admin'),
   validate(updateReturnRequestSchema),
   updateReturnRequestController
 );
-
+orderRouter.patch(
+  '/:orderId/cancel-refund',
+  requireRoles('staff', 'admin'),
+  validate(updateCancelRefundRequestSchema),
+  updateCancelRefundRequestController
+);
 orderRouter.post(
   '/:orderId/repay',
   validate(repayVnpayOrderSchema),
