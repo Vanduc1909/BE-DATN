@@ -11,7 +11,10 @@ import {
   retryMyVnpayPayment,
   updateOrderStatus,
   handleZalopayRedirect,
-  handleZalopayCallback
+  handleZalopayCallback,
+  createCancelRefundRequest,
+  updateReturnRequest,
+  updateCancelRefundRequest
 } from '@services/order.service';
 import { ApiError } from '@utils/api-error';
 import { asyncHandler } from '@utils/async-handler';
@@ -91,6 +94,23 @@ export const createReturnRequestController = asyncHandler(async (req, res) => {
   });
 });
 
+export const createCancelRefundRequestController = asyncHandler(async (req, res) => {
+  const data = await createCancelRefundRequest({
+    userId: getUserId(req),
+    orderId: getParam(req.params.orderId, 'orderId'),
+    bankCode: req.body.bankCode,
+    bankName: req.body.bankName,
+    accountNumber: req.body.accountNumber,
+    accountHolder: req.body.accountHolder,
+    note: req.body.note
+  });
+
+  return sendSuccess(res, {
+    message: 'Create cancel refund request successfully',
+    data
+  });
+});
+
 export const updateReturnRequestController = asyncHandler(async (req, res) => {
   const data = await updateReturnRequest({
     orderId: getParam(req.params.orderId, 'orderId'),
@@ -103,6 +123,21 @@ export const updateReturnRequestController = asyncHandler(async (req, res) => {
 
   return sendSuccess(res, {
     message: 'Update return request successfully',
+    data
+  });
+});
+
+export const updateCancelRefundRequestController = asyncHandler(async (req, res) => {
+  const data = await updateCancelRefundRequest({
+    orderId: getParam(req.params.orderId, 'orderId'),
+    processedBy: getUserId(req),
+    status: req.body.status,
+    adminNote: req.body.adminNote,
+    refundEvidenceImages: req.body.refundEvidenceImages
+  });
+
+  return sendSuccess(res, {
+    message: 'Update cancel refund request successfully',
     data
   });
 });

@@ -21,15 +21,7 @@ export const listOrdersSchema = z.object({
     userId: z.string().optional(),
     search: z.string().optional(),
     status: z
-      .enum([
-        'pending',
-        'confirmed',
-        'shipping',
-        'delivered',
-        'completed',
-        'cancelled',
-        'returned'
-      ])
+      .enum(['pending', 'confirmed', 'shipping', 'delivered', 'completed', 'cancelled', 'returned'])
       .optional()
   })
 });
@@ -118,4 +110,28 @@ export const verifyZalopayRedirectSchema = z.object({
       checksum: z.string().min(1)
     })
     .passthrough()
+});
+
+export const createCancelRefundRequestSchema = z.object({
+  params: z.object({
+    orderId: z.string().min(1)
+  }),
+  body: z.object({
+    bankCode: z.string().min(2).max(20),
+    bankName: z.string().min(2).max(120),
+    accountNumber: z.string().min(6).max(32),
+    accountHolder: z.string().min(2).max(120),
+    note: z.string().max(500).optional()
+  })
+});
+
+export const updateCancelRefundRequestSchema = z.object({
+  params: z.object({
+    orderId: z.string().min(1)
+  }),
+  body: z.object({
+    status: z.enum(['pending', 'rejected', 'refunded']),
+    adminNote: z.string().max(500).optional(),
+    refundEvidenceImages: z.array(z.string().min(1)).optional()
+  })
 });
