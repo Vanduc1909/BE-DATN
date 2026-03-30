@@ -23,9 +23,6 @@ interface UpdateUserInput {
   role?: Role;
   isActive?: boolean;
   avatarUrl?: string;
-  loyaltyPoints?: number;
-  membershipTier?: UserDocument['membershipTier'];
-  staffDepartment?: string;
   staffStartDate?: Date;
   password?: string;
 }
@@ -38,9 +35,6 @@ const toPublicUser = (user: UserWithId) => ({
   phone: user.phone,
   role: user.role,
   avatarUrl: user.avatarUrl,
-  loyaltyPoints: user.loyaltyPoints,
-  membershipTier: user.membershipTier,
-  staffDepartment: user.staffDepartment,
   staffStartDate: user.staffStartDate,
   createdAt: user.createdAt,
   updatedAt: user.updatedAt
@@ -166,18 +160,6 @@ export const updateUser = async (userId: string, payload: UpdateUserInput) => {
 
   if (payload.avatarUrl !== undefined) {
     user.avatarUrl = payload.avatarUrl;
-  }
-
-  if (payload.loyaltyPoints !== undefined) {
-    user.loyaltyPoints = payload.loyaltyPoints;
-  }
-
-  if (payload.membershipTier !== undefined) {
-    user.membershipTier = payload.membershipTier;
-  }
-
-  if (payload.staffDepartment !== undefined) {
-    user.staffDepartment = payload.staffDepartment;
   }
 
   if (payload.staffStartDate !== undefined) {

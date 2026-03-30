@@ -1,7 +1,5 @@
 export type Role = 'customer' | 'staff' | 'admin';
 
-export type MembershipTier = 'bronze' | 'silver' | 'gold' | 'platinum';
-
 export type VoucherDiscountType = 'percentage' | 'fixed_amount';
 
 export type OrderStatus =

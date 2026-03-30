@@ -1,6 +1,6 @@
 import { Schema, model } from 'mongoose';
 
-import type { MembershipTier, Role } from '@/types/domain';
+import type { Role } from '@/types/domain';
 
 export interface UserDocument {
   email: string;
@@ -10,9 +10,6 @@ export interface UserDocument {
   phone?: string;
   role: Role;
   avatarUrl?: string;
-  loyaltyPoints: number;
-  membershipTier: MembershipTier;
-  staffDepartment?: string;
   staffStartDate?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -50,19 +47,6 @@ const userSchema = new Schema<UserDocument>(
       default: 'customer'
     },
     avatarUrl: {
-      type: String,
-      trim: true
-    },
-    loyaltyPoints: {
-      type: Number,
-      default: 0
-    },
-    membershipTier: {
-      type: String,
-      enum: ['bronze', 'silver', 'gold', 'platinum'],
-      default: 'bronze'
-    },
-    staffDepartment: {
       type: String,
       trim: true
     },
