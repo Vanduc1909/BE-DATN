@@ -1,30 +1,30 @@
-import { CategoryModel } from '@/models/category.model';
+import { ChatbotPresetDocument, ChatbotPresetModel } from '@/models/chatbot-preset.model';
 import { ProductVariantModel } from '@/models/product-variant.model';
 import { ProductModel } from '@/models/product.model';
+import { ApiError } from '@/utils/api-error';
+import { StatusCodes } from 'http-status-codes';
 import { Types } from 'mongoose';
 
-type ChatbotIntent =
-  | 'order_tracking'
-  | 'payment'
-  | 'shipping'
-  | 'voucher'
-  | 'return_refund'
-  | 'recommendation'
-  | 'general';
+export type ChatbotIntent = 'preset';
 
-interface AskChatbotInput {
-  question: string;
+export interface AskChatbotInput {
+  presetId: string;
   context?: {
     path?: string;
   };
 }
 
-interface ChatbotAction {
+export interface ChatbotAction {
   label: string;
   url: string;
 }
 
-interface ChatbotSuggestedProduct {
+export interface ChatbotPresetOption {
+  id: string;
+  question: string;
+}
+
+export interface ChatbotSuggestedProduct {
   id: string;
   name: string;
   brand: string;
@@ -35,457 +35,354 @@ interface ChatbotSuggestedProduct {
   url: string;
 }
 
-interface AskChatbotResult {
+export interface AskChatbotResult {
   intent: ChatbotIntent;
   answer: string;
   actions: ChatbotAction[];
-  followUpQuestions: string[];
+  followUpQuestions: ChatbotPresetOption[];
   suggestedProducts: ChatbotSuggestedProduct[];
 }
 
-interface ProductSuggestionSnapshot {
+export interface AdminChatbotPresetProduct {
+  id: string;
+  name: string;
+  brand: string;
+  imageUrl: string | null;
+  isAvailable: boolean;
+}
+
+export interface AdminChatbotPresetItem {
+  id: string;
+  question: string;
+  answer?: string;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  products: AdminChatbotPresetProduct[];
+}
+
+export interface UpsertChatbotPresetInput {
+  question?: string;
+  answer?: string;
+  productIds?: string[];
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+interface ProductSnapshot {
   _id: unknown;
   name?: string;
   brand?: string;
   images?: string[];
+  isAvailable?: boolean;
   soldCount?: number;
   averageRating?: number;
 }
 
-interface CategorySnapshot {
-  name?: string;
-}
+const toObjectId = (value: string) => new Types.ObjectId(value);
 
-const STOP_WORDS = new Set([
-  'toi',
-  'minh',
-  'la',
-  'va',
-  'hoac',
-  'cho',
-  've',
-  'co',
-  'khong',
-  'can',
-  'duoc',
-  'nhu',
-  'nao',
-  'gi',
-  'di',
-  'den',
-  'tren',
-  'duoi',
-  'mot',
-  'nhung',
-  'vui',
-  'long',
-  'shop',
-  'cua',
-  'hang',
-  'em',
-  'anh',
-  'chi'
-]);
+const normalizeProductIds = (productIds: string[]) => {
+  const normalized = Array.from(new Set(productIds.map((item) => item.trim()).filter(Boolean)));
 
-const parseBudgetFromQuestion = (question: string) => {
-  const normalized = normalizeText(question).replace(/,/g, '.');
-  const budgetPatterns = [
-    /(?:duoi|toi da|max)\s+(\d+(?:\.\d+)?)\s*(trieu|m|nghin|ngan|k)?/,
-    /(\d+(?:\.\d+)?)\s*(trieu|m|nghin|ngan|k)\s*(?:tro xuong|tro lai|duoi)?/
-  ];
+  if (normalized.length === 0) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'At least one chatbot product is required');
+  }
+  if (!normalized.every((item) => Types.ObjectId.isValid(item))) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid productIds');
+  }
 
-  for (const pattern of budgetPatterns) {
-    const matched = normalized.match(pattern);
+  return normalized;
+};
 
-    if (!matched) {
-      continue;
+const ensureProductsExist = async (productIds: string[]) => {
+  const count = await ProductModel.countDocuments({
+    _id: {
+      $in: productIds.map((item) => toObjectId(item))
     }
+  });
 
-    const rawValue = Number.parseFloat(matched[1]);
-
-    if (!Number.isFinite(rawValue) || rawValue <= 0) {
-      continue;
-    }
-
-    const unit = matched[2];
-
-    if (unit === 'trieu' || unit === 'm') {
-      return Math.round(rawValue * 1_000_000);
-    }
-
-    if (unit === 'nghin' || unit === 'ngan' || unit === 'k') {
-      return Math.round(rawValue * 1_000);
-    }
-
-    return Math.round(rawValue);
+  if (count !== productIds.length) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Some selected products do not exist');
   }
-
-  return undefined;
 };
 
-const formatCurrencyVnd = (value: number) => {
-  return `${value.toLocaleString('vi-VN')} đ`;
-};
-
-const normalizeText = (value: string) => {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-};
-
-const escapeRegex = (value: string) => {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-};
-
-const includesAny = (normalizedQuestion: string, keywords: string[]) => {
-  return keywords.some((keyword) => normalizedQuestion.includes(keyword));
-};
-
-const detectIntent = (normalizedQuestion: string): ChatbotIntent => {
-  if (
-    includesAny(normalizedQuestion, [
-      'don hang',
-      'trang thai don',
-      'ma don',
-      'theo doi don',
-      'kiem tra don'
-    ])
-  ) {
-    return 'order_tracking';
-  }
-
-  if (
-    includesAny(normalizedQuestion, [
-      'thanh toan',
-      'vnpay',
-      'momo',
-      'chuyen khoan',
-      'cod',
-      'tra gop'
-    ])
-  ) {
-    return 'payment';
-  }
-
-  if (
-    includesAny(normalizedQuestion, [
-      'giao hang',
-      'van chuyen',
-      'ship',
-      'phi ship',
-      'thoi gian giao'
-    ])
-  ) {
-    return 'shipping';
-  }
-
-  if (includesAny(normalizedQuestion, ['voucher', 'ma giam', 'giam gia', 'khuyen mai', 'uu dai'])) {
-    return 'voucher';
-  }
-
-  if (
-    includesAny(normalizedQuestion, ['doi tra', 'hoan tien', 'huy don', 'bao hanh', 'tra hang'])
-  ) {
-    return 'return_refund';
-  }
-
-  if (includesAny(normalizedQuestion, ['goi y', 'tu van', 'san pham', 'mua', 'ban chay', 'chon'])) {
-    return 'recommendation';
-  }
-
-  return 'general';
-};
-
-const extractKeywords = (question: string) => {
-  const normalized = normalizeText(question).replace(/[^a-z0-9\s]/g, ' ');
-  const deduped = new Set<string>();
-
-  for (const token of normalized.split(/\s+/g)) {
-    if (!token || token.length < 2 || STOP_WORDS.has(token)) {
-      continue;
-    }
-
-    deduped.add(token);
-
-    if (deduped.size >= 5) {
-      break;
-    }
-  }
-
-  return Array.from(deduped);
-};
-
-const fetchSuggestedProducts = async (input: { keywords: string[]; maxPrice?: number }) => {
-  const { keywords, maxPrice } = input;
-  const baseFilter: Record<string, unknown> = {
-    isAvailable: true
+const buildChatbotPresetOptions = async (excludePresetId?: string) => {
+  const filter: Record<string, unknown> = {
+    isActive: true
   };
 
-  let productIdsFromBudget: string[] | undefined;
-  let minPriceByProductId = new Map<string, number>();
-
-  if (typeof maxPrice === 'number' && Number.isFinite(maxPrice) && maxPrice > 0) {
-    const variantPrices = (await ProductVariantModel.aggregate([
-      {
-        $match: {
-          isAvailable: true,
-          stockQuantity: {
-            $gt: 0
-          }
-        }
-      },
-      {
-        $group: {
-          _id: '$productId',
-          minPrice: {
-            $min: '$price'
-          }
-        }
-      },
-      {
-        $match: {
-          minPrice: {
-            $lte: maxPrice
-          }
-        }
-      },
-      {
-        $sort: {
-          minPrice: 1
-        }
-      }
-    ])) as Array<{ _id: unknown; minPrice: number }>;
-
-    productIdsFromBudget = variantPrices.map((item) => String(item._id));
-    minPriceByProductId = new Map(
-      variantPrices.map((item) => [String(item._id), Number(item.minPrice)])
-    );
-
-    if (productIdsFromBudget.length === 0) {
-      return [];
-    }
-
-    baseFilter._id = {
-      $in: productIdsFromBudget
+  if (excludePresetId && Types.ObjectId.isValid(excludePresetId)) {
+    filter._id = {
+      $ne: toObjectId(excludePresetId)
     };
   }
 
-  if (keywords.length > 0) {
-    const pattern = keywords.map((keyword) => escapeRegex(keyword)).join('|');
-    const regex = new RegExp(pattern, 'i');
+  const presets = (await ChatbotPresetModel.find(filter)
+    .sort({ sortOrder: 1, updatedAt: -1 })
+    .select('question')
+    .lean()) as Array<{ _id: unknown; question?: string }>;
 
-    baseFilter.$or = [{ name: { $regex: regex } }, { brand: { $regex: regex } }];
-  }
-
-  let products = (await ProductModel.find(baseFilter)
-    .sort(
-      keywords.length > 0 ? { soldCount: -1, averageRating: -1, updatedAt: -1 } : { soldCount: -1 }
-    )
-    .limit(4)
-    .select('name brand images soldCount averageRating')
-    .lean()) as ProductSuggestionSnapshot[];
-
-  if (products.length === 0 && keywords.length > 0) {
-    const fallbackFilter: Record<string, unknown> = {
-      isAvailable: true
-    };
-
-    if (productIdsFromBudget && productIdsFromBudget.length > 0) {
-      fallbackFilter._id = {
-        $in: productIdsFromBudget
-      };
-    }
-
-    products = (await ProductModel.find(fallbackFilter)
-      .sort({ soldCount: -1, averageRating: -1, updatedAt: -1 })
-      .limit(4)
-      .select('name brand images soldCount averageRating')
-      .lean()) as ProductSuggestionSnapshot[];
-  }
-
-  if (products.length > 0 && minPriceByProductId.size === 0) {
-    const productIds = products.map((product) => String(product._id));
-    const variantPrices = (await ProductVariantModel.aggregate([
-      {
-        $match: {
-          isAvailable: true,
-          stockQuantity: {
-            $gt: 0
-          },
-          productId: {
-            $in: productIds.map((id) => new Types.ObjectId(id))
-          }
-        }
-      },
-      {
-        $group: {
-          _id: '$productId',
-          minPrice: {
-            $min: '$price'
-          }
-        }
-      }
-    ])) as Array<{ _id: unknown; minPrice: number }>;
-
-    minPriceByProductId = new Map(
-      variantPrices.map((item) => [String(item._id), Number(item.minPrice)])
-    );
-  }
-
-  return products.map((product) => ({
-    id: String(product._id ?? ''),
-    name: product.name ?? 'Sản phẩm',
-    brand: product.brand ?? 'Generic',
-    imageUrl: Array.isArray(product.images) && product.images.length > 0 ? product.images[0] : null,
-    priceFrom: minPriceByProductId.get(String(product._id ?? '')) ?? null,
-    soldCount: Number(product.soldCount ?? 0),
-    averageRating: Number(product.averageRating ?? 0),
-    url: `/products/${String(product._id ?? '')}`
+  return presets.map((preset) => ({
+    id: String(preset._id ?? ''),
+    question: preset.question?.trim() || 'Câu hỏi mẫu'
   }));
 };
 
-const buildIntentResponse = async (
-  intent: ChatbotIntent,
-  suggestedProducts: ChatbotSuggestedProduct[],
-  contextPath?: string,
-  maxPrice?: number
-) => {
-  switch (intent) {
-    case 'order_tracking':
-      return {
-        answer:
-          'Bạn có thể theo dõi trạng thái đơn trong mục "Đơn hàng của tôi". Hệ thống sẽ cập nhật tự động theo từng bước xử lý.',
-        actions: [
-          { label: 'Xem đơn hàng', url: '/account/orders' },
-          { label: 'Đăng nhập', url: '/login' }
-        ],
-        followUpQuestions: ['Đơn của tôi đang ở trạng thái nào?', 'Làm sao để hủy đơn hàng?']
-      };
-    case 'payment':
-      return {
-        answer:
-          'Hiện cửa hàng hỗ trợ COD, chuyển khoản, MoMo và VNPay. Bạn có thể chọn phương thức thanh toán tại trang checkout.',
-        actions: [
-          { label: 'Đi tới checkout', url: '/checkout' },
-          { label: 'Xem giỏ hàng', url: '/' }
-        ],
-        followUpQuestions: ['Thanh toán VNPay bị lỗi thì làm sao?', 'COD có phụ phí không?']
-      };
-    case 'shipping':
-      return {
-        answer:
-          'Thời gian giao hàng thường từ 1-5 ngày tùy khu vực. Phí ship sẽ hiển thị rõ trước khi bạn xác nhận đặt hàng.',
-        actions: [
-          { label: 'Xem sản phẩm', url: '/products' },
-          { label: 'Theo dõi đơn hàng', url: '/account/orders' }
-        ],
-        followUpQuestions: ['Đơn hàng có giao nhanh không?', 'Có miễn phí vận chuyển không?']
-      };
-    case 'voucher':
-      return {
-        answer:
-          'Bạn có thể áp dụng voucher tại trang checkout. Hệ thống sẽ tự kiểm tra điều kiện đơn tối thiểu và giới hạn sử dụng.',
-        actions: [
-          { label: 'Mua ngay', url: '/products' },
-          { label: 'Đi tới checkout', url: '/checkout' }
-        ],
-        followUpQuestions: [
-          'Mã giảm giá của tôi không áp dụng được?',
-          'Voucher còn bao nhiêu lượt?'
-        ]
-      };
-    case 'return_refund':
-      return {
-        answer:
-          'Bạn có thể yêu cầu hủy đơn khi đơn chưa giao, hoặc liên hệ hỗ trợ để xử lý đổi/trả tùy tình trạng sản phẩm.',
-        actions: [
-          { label: 'Xem đơn hàng', url: '/account/orders' },
-          { label: 'Xem chính sách', url: '/about' }
-        ],
-        followUpQuestions: ['Khi nào tôi được hoàn tiền?', 'Đơn đã giao có thể đổi trả không?']
-      };
-    case 'recommendation':
-      return {
-        answer:
-          suggestedProducts.length > 0
-            ? maxPrice
-              ? `Mình đã lọc các sản phẩm còn hàng trong ngân sách dưới ${formatCurrencyVnd(maxPrice)}.`
-              : 'Mình đã tìm thấy một số sản phẩm phù hợp và đang được quan tâm.'
-            : maxPrice
-              ? `Hiện chưa có sản phẩm phù hợp dưới ${formatCurrencyVnd(maxPrice)}. Bạn có thể tăng nhẹ ngân sách để có thêm lựa chọn.`
-              : 'Bạn có thể mô tả rõ hơn nhu cầu (tầm giá, loại sản phẩm, mục đích dùng) để mình gợi ý chính xác hơn.',
-        actions: [
-          { label: 'Xem toàn bộ sản phẩm', url: '/products' },
-          { label: 'Sản phẩm mới nhất', url: '/products?sort=newest' }
-        ],
-        followUpQuestions: [
-          'Có sản phẩm bán chạy nào không?',
-          'Gợi ý theo ngân sách dưới 2 triệu',
-          'Sản phẩm nào phù hợp người mới chơi?'
-        ]
-      };
-    case 'general':
-    default: {
-      const topCategories = (await CategoryModel.find({ isActive: true })
-        .sort({ updatedAt: -1 })
-        .limit(4)
-        .select('name')
-        .lean()) as CategorySnapshot[];
-      const categoryText = topCategories
-        .map((item) => item.name?.trim())
-        .filter(Boolean)
-        .join(', ');
-
-      return {
-        answer:
-          categoryText.length > 0
-            ? `Mình có thể hỗ trợ tư vấn sản phẩm, thanh toán, vận chuyển và đơn hàng. Một số danh mục nổi bật hiện tại: ${categoryText}.`
-            : 'Mình có thể hỗ trợ tư vấn sản phẩm, thanh toán, vận chuyển và đơn hàng.',
-        actions: [
-          { label: 'Khám phá sản phẩm', url: '/products' },
-          {
-            label: contextPath?.startsWith('/products')
-              ? 'Trang sản phẩm hiện tại'
-              : 'Xem chính sách',
-            url: contextPath?.startsWith('/products') ? contextPath : '/about'
-          }
-        ],
-        followUpQuestions: ['Gợi ý sản phẩm bán chạy', 'Hướng dẫn theo dõi đơn hàng']
-      };
-    }
+const getProductSnapshotsByIds = async (productIds: string[]) => {
+  if (productIds.length === 0) {
+    return [] as ProductSnapshot[];
   }
+
+  const products = (await ProductModel.find({
+    _id: {
+      $in: productIds.map((item) => toObjectId(item))
+    }
+  })
+    .select('name brand images isAvailable soldCount averageRating')
+    .lean()) as ProductSnapshot[];
+
+  const productMap = new Map(products.map((product) => [String(product._id ?? ''), product]));
+
+  return productIds
+    .map((productId) => productMap.get(productId))
+    .filter((product): product is ProductSnapshot => Boolean(product));
+};
+
+const getVariantPriceMap = async (productIds: string[]) => {
+  if (productIds.length === 0) {
+    return new Map<string, number>();
+  }
+
+  const variantPrices = (await ProductVariantModel.aggregate([
+    {
+      $match: {
+        isAvailable: true,
+        stockQuantity: {
+          $gt: 0
+        },
+        productId: {
+          $in: productIds.map((item) => toObjectId(item))
+        }
+      }
+    },
+    {
+      $group: {
+        _id: '$productId',
+        minPrice: {
+          $min: '$price'
+        }
+      }
+    }
+  ])) as Array<{ _id: unknown; minPrice: number }>;
+
+  return new Map(variantPrices.map((item) => [String(item._id), Number(item.minPrice)]));
+};
+
+const buildSuggestedProducts = async (productIds: string[]) => {
+  const products = await getProductSnapshotsByIds(productIds);
+  const activeProducts = products.filter((product) => product.isAvailable !== false);
+  const priceMap = await getVariantPriceMap(
+    activeProducts.map((product) => String(product._id ?? ''))
+  );
+
+  return activeProducts.map((product) => {
+    const productId = String(product._id ?? '');
+
+    return {
+      id: productId,
+      name: product.name?.trim() || 'Sản phẩm',
+      brand: product.brand?.trim() || 'Generic',
+      imageUrl:
+        Array.isArray(product.images) && product.images.length > 0 ? product.images[0] : null,
+      priceFrom: priceMap.get(productId) ?? null,
+      soldCount: Number(product.soldCount ?? 0),
+      averageRating: Number(product.averageRating ?? 0),
+      url: `/products/${productId}`
+    };
+  });
+};
+
+const buildAdminProducts = async (productIds: string[]) => {
+  const products = await getProductSnapshotsByIds(productIds);
+
+  return products.map((product) => ({
+    id: String(product._id ?? ''),
+    name: product.name?.trim() || 'Sản phẩm',
+    brand: product.brand?.trim() || 'Generic',
+    imageUrl: Array.isArray(product.images) && product.images.length > 0 ? product.images[0] : null,
+    isAvailable: product.isAvailable === true
+  }));
+};
+
+const normalizePresetForAdmin = async (preset: ChatbotPresetDocument & { _id: Types.ObjectId }) => {
+  const productIds = (preset.productIds ?? []).map((item) => String(item));
+  const products = await buildAdminProducts(productIds);
+
+  return {
+    id: String(preset._id),
+    question: preset.question,
+    answer: preset.answer?.trim() || undefined,
+    isActive: preset.isActive,
+    sortOrder: preset.sortOrder,
+    createdAt: preset.createdAt.toISOString(),
+    updatedAt: preset.updatedAt.toISOString(),
+    products
+  } satisfies AdminChatbotPresetItem;
+};
+
+const buildPresetAnswer = (preset: { question: string; answer?: string }, productCount: number) => {
+  if (preset.answer?.trim()) {
+    return preset.answer.trim();
+  }
+
+  if (productCount > 0) {
+    return `Mình đã chuẩn bị sẵn một số sản phẩm phù hợp cho câu hỏi "${preset.question}".`;
+  }
+
+  return 'Hiện chưa có sản phẩm khả dụng cho chủ đề này. Bạn có thể chọn câu hỏi khác hoặc liên hệ nhân viên hỗ trợ.';
+};
+
+const toUpdatePayload = async (input: UpsertChatbotPresetInput) => {
+  const payload: Record<string, unknown> = {};
+
+  if (input.question !== undefined) {
+    payload.question = input.question.trim();
+  }
+
+  if (input.answer !== undefined) {
+    payload.answer = input.answer.trim();
+  }
+
+  if (input.productIds !== undefined) {
+    const productIds = normalizeProductIds(input.productIds);
+    await ensureProductsExist(productIds);
+    payload.productIds = productIds.map((item) => toObjectId(item));
+  }
+
+  if (input.isActive !== undefined) {
+    payload.isActive = input.isActive;
+  }
+
+  if (input.sortOrder !== undefined) {
+    payload.sortOrder = input.sortOrder;
+  }
+
+  return payload;
+};
+
+export const listActiveChatbotPresets = async () => {
+  return buildChatbotPresetOptions();
 };
 
 export const askChatbot = async (input: AskChatbotInput): Promise<AskChatbotResult> => {
-  const normalizedQuestion = normalizeText(input.question);
-  const intent = detectIntent(normalizedQuestion);
-  const keywords = extractKeywords(input.question);
-  const maxPrice = parseBudgetFromQuestion(input.question);
+  if (!Types.ObjectId.isValid(input.presetId)) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid presetId');
+  }
 
-  const shouldLoadSuggestuons =
-    intent === 'recommendation' || (keywords.length > 0 && intent !== 'order_tracking');
+  const preset = await ChatbotPresetModel.findOne({
+    _id: toObjectId(input.presetId),
+    isActive: true
+  }).lean();
 
-  const suggestedProducts = shouldLoadSuggestuons
-    ? await fetchSuggestedProducts({
-        keywords,
-        maxPrice
-      })
-    : ([] as ChatbotSuggestedProduct[]);
+  if (!preset) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Chatbot preset not found');
+  }
 
-  const responseTemplate = await buildIntentResponse(
-    intent,
-    suggestedProducts,
-    input.context?.path,
-    maxPrice
-  );
+  const presetProductIds = (preset.productIds ?? []).map((item) => String(item));
+  const suggestedProducts = await buildSuggestedProducts(presetProductIds);
+  const followUpQuestions = await buildChatbotPresetOptions(String(preset._id));
 
   return {
-    intent,
-    answer: responseTemplate.answer,
-    actions: responseTemplate.actions,
-    followUpQuestions: responseTemplate.followUpQuestions,
+    intent: 'preset',
+    answer: buildPresetAnswer(
+      {
+        question: preset.question,
+        answer: preset.answer
+      },
+      suggestedProducts.length
+    ),
+    actions: [
+      {
+        label: 'Xem sản phẩm',
+        url: '/products'
+      }
+    ],
+    followUpQuestions,
     suggestedProducts
+  };
+};
+
+export const listAdminChatbotPresets = async () => {
+  const presets = (await ChatbotPresetModel.find({})
+    .sort({ sortOrder: 1, updatedAt: -1 })
+    .lean()) as Array<ChatbotPresetDocument & { _id: Types.ObjectId }>;
+
+  return Promise.all(presets.map((preset) => normalizePresetForAdmin(preset)));
+};
+
+export const createChatbotPreset = async (input: UpsertChatbotPresetInput) => {
+  const question = input.question?.trim();
+
+  if (!question) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Question is required');
+  }
+
+  if (!input.productIds) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'At least one chatbot product is required');
+  }
+
+  const productIds = normalizeProductIds(input.productIds);
+  await ensureProductsExist(productIds);
+
+  const created = await ChatbotPresetModel.create({
+    question,
+    answer: input.answer?.trim() || undefined,
+    productIds: productIds.map((item) => toObjectId(item)),
+    isActive: input.isActive ?? true,
+    sortOrder: input.sortOrder ?? 0
+  });
+
+  return normalizePresetForAdmin(
+    created.toObject() as ChatbotPresetDocument & { _id: Types.ObjectId }
+  );
+};
+
+export const updateChatbotPreset = async (presetId: string, input: UpsertChatbotPresetInput) => {
+  if (!Types.ObjectId.isValid(presetId)) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid presetId');
+  }
+
+  const payload = await toUpdatePayload(input);
+
+  if (Object.keys(payload).length === 0) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'At least one field is required to update');
+  }
+
+  const preset = await ChatbotPresetModel.findByIdAndUpdate(toObjectId(presetId), payload, {
+    new: true,
+    runValidators: true
+  }).lean();
+
+  if (!preset) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Chatbot preset not found');
+  }
+
+  return normalizePresetForAdmin(preset as ChatbotPresetDocument & { _id: Types.ObjectId });
+};
+
+export const deleteChatbotPreset = async (presetId: string) => {
+  if (!Types.ObjectId.isValid(presetId)) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid presetId');
+  }
+
+  const deleted = await ChatbotPresetModel.findByIdAndDelete(toObjectId(presetId)).lean();
+
+  if (!deleted) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Chatbot preset not found');
+  }
+
+  return {
+    id: String(deleted._id ?? presetId)
   };
 };
