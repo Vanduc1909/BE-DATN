@@ -37,9 +37,6 @@ export const updateUserSchema = z.object({
       role: z.enum(['customer', 'staff']).optional(),
       isActive: z.boolean().optional(),
       avatarUrl: z.string().url().optional(),
-      loyaltyPoints: z.number().int().min(0).optional(),
-      membershipTier: z.enum(['bronze', 'silver', 'gold', 'platinum']).optional(),
-      staffDepartment: z.string().max(120).optional(),
       staffStartDate: z.coerce.date().optional(),
       password: z.string().min(8).max(64).optional()
     })

@@ -77,9 +77,6 @@ const toPublicUser = (user: UserLean) => {
     phone: user.phone,
     role: user.role,
     avatarUrl: user.avatarUrl,
-    loyaltyPoints: user.loyaltyPoints,
-    membershipTier: user.membershipTier,
-    staffDepartment: user.staffDepartment,
     staffStartDate: user.staffStartDate,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt
