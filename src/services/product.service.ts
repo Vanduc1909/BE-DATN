@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
 
-
 import { BrandModel } from '@models/brand.model';
 import { CategoryModel } from '@models/category.model';
 import { ColorModel } from '@models/color.model';
@@ -21,8 +20,6 @@ interface ProductPayload {
   attributes?: Record<string, unknown>;
   images?: string[];
   isAvailable?: boolean;
-  metaTitle?: string;
-  metaDescription?: string;
 }
 
 interface ProductVariantPayload {
@@ -33,7 +30,7 @@ interface ProductVariantPayload {
   price: number;
   originalPrice?: number;
   stockQuantity?: number;
-  isAvailable?: boolean;
+  isAvailable: boolean;
   images?: string[];
 }
 
@@ -48,8 +45,13 @@ interface ProductCardVariantSnapshot {
 interface StorefrontCategorySnapshot {
   _id: unknown;
   name?: string;
-  slug?: string;
-  image?: string;
+}
+
+interface StorefrontColorSnapshot {
+  _id: unknown;
+  name?: string;
+  hexCode?: string;
+  isActive?: boolean;
 }
 
 interface ColorSnapshot {
@@ -58,16 +60,9 @@ interface ColorSnapshot {
   hexCode?: string;
   isActive?: boolean;
 }
-
 interface BrandSnapshot {
   _id: unknown;
   name?: string;
-  isActive?: boolean;
-}
-interface StorefrontColorSnapshot {
-  _id: unknown;
-  name?: string;
-  hexCode?: string;
   isActive?: boolean;
 }
 
@@ -96,7 +91,7 @@ const enrichProductsForStorefront = async (products: Array<Record<string, unknow
       $in: products.map((product) => String(product._id))
     }
   })
-    .select('productId price originPrice images isAvailable')
+    .select('productId price originalPrice images isAvailable')
     .lean()) as ProductCardVariantSnapshot[];
 
   const variantsByProductId = new Map<string, ProductCardVariantSnapshot[]>();
@@ -114,15 +109,15 @@ const enrichProductsForStorefront = async (products: Array<Record<string, unknow
     const availableVariants = productVariants.filter((variant) => variant.isAvailable);
     const pricingSource = availableVariants.length > 0 ? availableVariants : productVariants;
     const prices = pricingSource.map((variant) => variant.price);
-    const thumnailFromProduct = getFirstImage(product.images);
-    const thumnailFromVariant = pricingSource
+    const thumbnailFromProduct = getFirstImage(product.images);
+    const thumbnailFromVariant = pricingSource
       .map((variant) => getFirstImage(variant.images))
       .find(Boolean);
 
     return {
       ...product,
       id: productId,
-      thumnailUrl: thumnailFromProduct ?? thumnailFromVariant ?? null,
+      thumbnailUrl: thumbnailFromProduct ?? thumbnailFromVariant ?? null,
       priceFrom: prices.length > 0 ? Math.min(...prices) : null,
       priceTo: prices.length > 0 ? Math.max(...prices) : null,
       hasDiscount: pricingSource.some(
@@ -138,7 +133,7 @@ const resolveVariantColor = (rawColor: unknown) => {
     const color = rawColor as ColorSnapshot;
 
     return {
-      colorOd: String(color._id),
+      colorId: String(color._id),
       color: color.name ?? 'Unknown',
       colorHex: color.hexCode
     };
@@ -147,7 +142,7 @@ const resolveVariantColor = (rawColor: unknown) => {
   if (typeof rawColor === 'string' && rawColor.trim()) {
     return {
       colorId: rawColor,
-      color: 'Unlnown',
+      color: 'Unknown',
       colorHex: undefined
     };
   }
@@ -195,6 +190,11 @@ const mapVariantResponse = (variant: Record<string, unknown>) => {
     size: sizeInfo.size
   };
 };
+
+const escapeRegex = (value: string) => {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
 const normalizeQueryList = (value: string | undefined) => {
   if (!value) {
     return [];
@@ -232,19 +232,7 @@ const parsePriceRanges = (ranges: string[] = []) => {
 
   return parsed;
 };
-const escapeRegex = (value: string) => {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-};
 
-const normalizeBrandSlug = (value: string) => {
-  return value
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-};
 const normalizeSkuToken = (value: string, fallback: string) => {
   const normalized = value
     .trim()
@@ -255,7 +243,11 @@ const normalizeSkuToken = (value: string, fallback: string) => {
   return normalized || fallback;
 };
 
-const generateProductVariantSku = async (input: { productName: string; color?: string; size?: string }) => {
+const generateProductVariantSku = async (input: {
+  productName: string;
+  color?: string;
+  size?: string;
+}) => {
   const productToken = normalizeSkuToken(input.productName, 'PRODUCT').slice(0, 12);
   const colorToken = normalizeSkuToken(input.color ?? 'DEFAULT', 'DEFAULT').slice(0, 8);
   const sizeToken = normalizeSkuToken(input.size ?? 'STANDARD', 'STANDARD').slice(0, 8);
@@ -283,8 +275,7 @@ const resolveProductBrandInput = async (payload: {
   if (rawBrandId) {
     const brand = (await BrandModel.findById(
       toObjectId(rawBrandId, 'brandId')
-    ).lean()) as BrandSnapshot;
-    null;
+    ).lean()) as BrandSnapshot | null;
 
     if (!brand || brand.isActive === false) {
       throw new ApiError(StatusCodes.NOT_FOUND, 'Brand not found or inactive');
@@ -323,24 +314,14 @@ const resolveProductBrandInput = async (payload: {
     };
   }
 
-  const baseSlug = normalizeBrandSlug(rawBrandName) || 'brand';
-  let candidateSlug = baseSlug;
-  let sequence = 1;
-
-  while (await BrandModel.exists({ slug: candidateSlug })) {
-    candidateSlug = `${baseSlug}-${sequence}`;
-    sequence += 1;
-  }
-
-  const createBrand = await BrandModel.create({
+  const createdBrand = await BrandModel.create({
     name: rawBrandName,
-    slug: candidateSlug,
     isActive: true
   });
 
   return {
-    brandId: toObjectId(String(createBrand._id), 'brandId'),
-    brand: createBrand.name
+    brandId: toObjectId(String(createdBrand._id), 'brandId'),
+    brand: createdBrand.name
   };
 };
 
@@ -369,9 +350,9 @@ export const listProducts = async (options: {
   limit: number;
   categoryId?: string;
   brandId?: string;
+  brand?: string;
   colorIds?: string[];
   priceRanges?: string[];
-  brand?: string;
   search?: string;
   isAvailable?: boolean;
 }) => {
@@ -388,6 +369,20 @@ export const listProducts = async (options: {
   if (typeof options.isAvailable === 'boolean') {
     filters.isAvailable = options.isAvailable;
   }
+
+  const brandFilters = normalizeQueryList(options.brand);
+
+  if (brandFilters.length === 1) {
+    filters.brand = brandFilters[0];
+  } else if (brandFilters.length > 1) {
+    filters.brand = { $in: brandFilters };
+  }
+
+  if (options.search?.trim()) {
+    const regex = new RegExp(options.search.trim(), 'i');
+    filters.$or = [{ name: regex }, { brand: regex }];
+  }
+
   const normalizedColorIds = (options.colorIds ?? [])
     .map((colorId) => colorId.trim())
     .filter(Boolean);
@@ -395,7 +390,9 @@ export const listProducts = async (options: {
 
   if (normalizedColorIds.length > 0 || priceRangeFilters.length > 0) {
     const baseProducts = await ProductModel.find(filters).select('_id').lean();
-    const baseProductIds = baseProducts.map((product) => toObjectId(String(product._id), 'productId'));
+    const baseProductIds = baseProducts.map((product) =>
+      toObjectId(String(product._id), 'productId')
+    );
 
     if (baseProductIds.length === 0) {
       return toPaginatedData([], 0, options.page, options.limit);
@@ -438,22 +435,9 @@ export const listProducts = async (options: {
     filters._id = { $in: matchedProductIds };
   }
 
-  const brandFilters = normalizeQueryList(options.brand);
-
-  if (brandFilters.length === 1) {
-    filters.brand = brandFilters[0];
-  } else if (brandFilters.length > 1) {
-    filters.brand = { $in: brandFilters };
-  }
-
-  if (options.search?.trim()) {
-    const regex = new RegExp(options.search.trim(), 'i');
-    filters.$or = [{ name: regex }, { brand: regex }];
-  }
-
   const totalItems = await ProductModel.countDocuments(filters);
   const items = await ProductModel.find(filters)
-    .sort({ createAt: -1 })
+    .sort({ createdAt: -1 })
     .skip((options.page - 1) * options.limit)
     .limit(options.limit)
     .lean();
@@ -465,7 +449,7 @@ export const listProducts = async (options: {
 
 export const listTopSellingProducts = async (limit: number) => {
   const items = await ProductModel.find({ isAvailable: true })
-    .sort({ soldCount: -1, createAt: -1 })
+    .sort({ soldCount: -1, createdAt: -1 })
     .limit(limit)
     .lean();
 
@@ -474,7 +458,7 @@ export const listTopSellingProducts = async (limit: number) => {
 
 export const listNewestProducts = async (limit: number) => {
   const items = await ProductModel.find({ isAvailable: true })
-    .sort({ createAt: -1 })
+    .sort({ createdAt: -1 })
     .limit(limit)
     .lean();
 
@@ -483,7 +467,7 @@ export const listNewestProducts = async (limit: number) => {
 
 export const listProductFilters = async () => {
   const products = (await ProductModel.find({ isAvailable: true })
-    .select('categoryIdbrand brandId')
+    .select('categoryId brand brandId')
     .lean()) as unknown as Array<Record<string, unknown>>;
 
   const categoryIds = new Set<string>();
@@ -506,30 +490,6 @@ export const listProductFilters = async () => {
     }
   }
 
-  const productIds = products.map((product) => toObjectId(String(product._id), 'productId'));
-  const colorIds =
-    productIds.length > 0
-      ? await ProductVariantModel.distinct('colorId', {
-          productId: { $in: productIds },
-          colorId: { $ne: null }
-        })
-      : [];
-
-  const colors =
-    colorIds.length > 0
-      ? ((await ColorModel.find({
-          _id: { $in: colorIds },
-          isActive: true
-        })
-          .select('name hexCode')
-          .sort({ name: 1 })
-          .lean()) as StorefrontColorSnapshot[]).map((color) => ({
-          id: String(color._id),
-          name: color.name ?? 'Màu sắc',
-          hexCode: color.hexCode
-        }))
-      : [];
-
   const categories = categoryIds.size
     ? (
         (await CategoryModel.find({
@@ -541,9 +501,7 @@ export const listProductFilters = async () => {
           .lean()) as StorefrontCategorySnapshot[]
       ).map((category) => ({
         id: String(category._id),
-        name: category.name ?? 'Danh muc',
-        slug: category.slug ?? '',
-        image: category.image
+        name: category.name ?? 'Danh muc'
       }))
     : [];
 
@@ -564,9 +522,35 @@ export const listProductFilters = async () => {
     }
   }
 
+  const productIds = products.map((product) => toObjectId(String(product._id), 'productId'));
+  const colorIds =
+    productIds.length > 0
+      ? await ProductVariantModel.distinct('colorId', {
+          productId: { $in: productIds },
+          colorId: { $ne: null }
+        })
+      : [];
+
+  const colors =
+    colorIds.length > 0
+      ? (
+          (await ColorModel.find({
+            _id: { $in: colorIds },
+            isActive: true
+          })
+            .select('name hexCode')
+            .sort({ name: 1 })
+            .lean()) as StorefrontColorSnapshot[]
+        ).map((color) => ({
+          id: String(color._id),
+          name: color.name ?? 'Màu sắc',
+          hexCode: color.hexCode
+        }))
+      : [];
+
   return {
     categories,
-   brands: Array.from(brands).sort((a, b) => a.localeCompare(b, 'vi')),
+    brands: Array.from(brands).sort((a, b) => a.localeCompare(b, 'vi')),
     colors
   };
 };
@@ -580,8 +564,9 @@ export const getProductById = async (productId: string) => {
   }
 
   const variants = await ProductVariantModel.find({ productId: _productId })
-    .sort({ createAt: -1 })
+    .sort({ createdAt: -1 })
     .populate('colorId', 'name hexCode')
+    .populate('sizeId', 'name')
     .lean();
 
   const mappedVariants = (variants as unknown as Array<Record<string, unknown>>).map((variant) =>
@@ -609,8 +594,6 @@ export const createProduct = async (payload: ProductPayload) => {
     attributes: payload.attributes,
     images: payload.images ?? [],
     isAvailable: payload.isAvailable ?? true,
-    metaTitle: payload.metaTitle,
-    metaDescription: payload.metaDescription,
     averageRating: 0,
     reviewCount: 0,
     soldCount: 0
@@ -640,14 +623,6 @@ export const updateProduct = async (productId: string, payload: Partial<ProductP
 
   if (payload.isAvailable !== undefined) {
     updateData.isAvailable = payload.isAvailable;
-  }
-
-  if (payload.metaTitle !== undefined) {
-    updateData.metaTitle = payload.metaTitle;
-  }
-
-  if (payload.metaDescription !== undefined) {
-    updateData.metaDescription = payload.metaDescription;
   }
 
   if (payload.categoryId !== undefined) {

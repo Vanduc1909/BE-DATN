@@ -7,6 +7,8 @@ import { env } from '@config/env';
 import { logger } from '@config/logger';
 import { ApiError } from '@utils/api-error';
 import type { NextFunction, Request, Response } from 'express';
+import { localizeMessage } from '@/utils/message-localize';
+import { de } from 'zod/v4/locales';
 
 export const errorMiddleware = (
   error: Error,
@@ -41,8 +43,11 @@ export const errorMiddleware = (
 
   return res.status(statusCode).json({
     success: false,
-    message,
-    errors: details,
+    message: localizeMessage(message),
+    errors: details?.map((detail) => ({
+      ...detail,
+      message: localizeMessage(detail.message)
+    })),
     ...(env.isDevelopment && { stack: error.stack })
   });
 };

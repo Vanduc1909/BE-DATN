@@ -47,7 +47,7 @@ export const listCourses = async (options: { page: number; limit: number; isActi
 
   const totalItems = await CourseModel.countDocuments(filters);
   const items = await CourseModel.find(filters)
-    .sort({ createAt: -1 })
+    .sort({ createdAt: -1 })
     .skip((options.page - 1) * options.limit)
     .limit(options.limit)
     .lean();
@@ -362,7 +362,7 @@ export const completeLesson = async (userId: string, courseId: string, lessonId:
     progress.status = 'completed';
     progress.completedAt = new Date();
   } else {
-    progress.status = 'completed';
+    progress.status = 'in_progress';
     progress.completedAt = undefined;
   }
 

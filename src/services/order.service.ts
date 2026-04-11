@@ -1,31 +1,4 @@
-import { AddressModel } from '@/models/address.model';
-import { CartModel } from '@/models/cart.model';
-import { CommentModel } from '@/models/comment.model';
 import crypto from 'node:crypto';
-import type { OrderStatus, PaymentMethod, PaymentStatus, ZalopayChannel } from '@/types/domain';
-import { logger } from '@config/logger';
-import { ApiError } from '@/utils/api-error';
-import { addMoney, roundMoney, subtractMoney } from '@/utils/money';
-import { toObjectId } from '@/utils/object-id';
-import { assertOrderTransitionAllowed } from '@/utils/order-transition';
-import { toPaginatedData } from '@/utils/pagination';
-import { verifyVnpayReturnSchema } from '@/validators/order.validator';
-import { StatusCodes } from 'http-status-codes';
-import { createVnpayPaymentUrl } from './vnpay.service';
-import { ProductVariantModel } from '@/models/product-variant.model';
-import { emitStaffRealtimeNotification } from '@services/realtime-notification.service';
-import {
-  createZalopayPaymentUrl,
-  queryZalopayOrderStatus,
-  type ZalopayRedirectPayload,
-  verifyZalopayCallback,
-  verifyZalopayRedirect
-} from './zalopay.service';
-import { env } from '@/config/env';
-import { OrderDocument, OrderModel } from '@/models/order.model';
-import { UserModel } from '@/models/user.model';
-import { ProductModel } from '@/models/product.model';
-import { ReviewModel } from '@/models/review.model';
 
 import type {
   CancelRefundRequestStatus,
@@ -56,10 +29,7 @@ import {
   verifyZalopayRedirect
 } from '@services/zalopay.service';
 import { VoucherModel } from '@models/voucher.model';
-import {
-  createVnpayPaymentUrl,
-  verifyVnpayReturnParams
-} from '@services/vnpay.service';
+import { createVnpayPaymentUrl, verifyVnpayReturnParams } from '@services/vnpay.service';
 import { applyVoucherForSubtotal } from '@services/voucher.service';
 import { ApiError } from '@utils/api-error';
 import { addMoney, roundMoney, subtractMoney } from '@utils/money';
@@ -161,22 +131,6 @@ interface VariantSalesAggregateItem {
   variantColor?: string;
   productImage?: string;
   soldCount: number;
-  revenue: number;
-}
-
-interface DailyRevenueItem {
-  date: string;
-  revenue: number;
-  orders: number;
-  deliveredOrders: number;
-}
-
-interface CategoryBreakdownAggregateItem {
-  categoryId: unknown;
-  categoryName: string;
-  orders: number;
-  deliveredOrders: number;
-  items: number;
   revenue: number;
 }
 
@@ -462,9 +416,8 @@ const sendCancelRefundProcessedMail = async ({
   refundRequest
 }: SendCancelRefundProcessedMailInput) => {
   try {
-    const billLinksHtml =
-      refundRequest.refundEvidenceImages?.length
-        ? `
+    const billLinksHtml = refundRequest.refundEvidenceImages?.length
+      ? `
       <div style="margin:16px 0;">
         <p style="margin:0 0 8px;color:#111827;font-weight:700;">Ảnh bill chuyển khoản</p>
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
@@ -480,12 +433,11 @@ const sendCancelRefundProcessedMail = async ({
         </div>
       </div>
     `
-        : '';
+      : '';
 
-    const billLinksText =
-      refundRequest.refundEvidenceImages?.length
-        ? `\nẢnh bill chuyển khoản:\n${refundRequest.refundEvidenceImages.join('\n')}\n`
-        : '';
+    const billLinksText = refundRequest.refundEvidenceImages?.length
+      ? `\nẢnh bill chuyển khoản:\n${refundRequest.refundEvidenceImages.join('\n')}\n`
+      : '';
 
     const subject = `[Golden Billiards] Đã hoàn tiền đơn hàng ${order.orderCode}`;
     const text =
@@ -589,24 +541,60 @@ const buildDateRange = (days: number) => {
   return { fromDate, toDate };
 };
 
-if (customer?.email) {
-  await sendOrderLifecycleMail({
-    to: customer.email,
-    customerName: customer.fullName,
-    order: created.toObject() as OrderMailSnapshot,
-    event: 'created',
-    paymentUrl
-  });
-}
+const AUTO_COMPLETE_DAYS = 3;
+
+const autoCompleteDeliveredOrders = async (userId?: string) => {
+  const threshold = new Date();
+  threshold.setDate(threshold.getDate() - AUTO_COMPLETE_DAYS);
+
+  const filter: Record<string, unknown> = {
+    status: 'delivered',
+    $or: [
+      { deliveredAt: { $lte: threshold } },
+      { deliveredAt: { $exists: false }, updatedAt: { $lte: threshold } }
+    ]
+  };
+
+  if (userId) {
+    filter.userId = toObjectId(userId, 'userId');
+  }
+
+  const orders = await OrderModel.find(filter);
+
+  if (orders.length === 0) {
+    return;
+  }
+
+  const now = new Date();
+
+  for (const order of orders) {
+    order.status = 'completed';
+    if (!order.completedAt) {
+      order.completedAt = now;
+    }
+
+    order.statusHistory.push({
+      status: 'completed',
+      changedBy: order.userId,
+      note: `Tự động hoàn thành sau ${AUTO_COMPLETE_DAYS} ngày`,
+      changedAt: now
+    });
+
+    await order.save();
+  }
+};
+
 const generateOrderCode = () => {
   const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const randomPart = crypto.randomInt(100000, 999999);
   return `ORD-${datePart}-${randomPart}`;
 };
 
-// worklog: 2026-03-04 09:25:21 | vanduc | refactor | buildVnpayTxnRef
 const buildVnpayTxnRef = (orderCode: string) => {
-  const compactOrderCode = orderCode.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(-12);
+  const compactOrderCode = orderCode
+    .replace(/[^A-Z0-9]/gi, '')
+    .toUpperCase()
+    .slice(-12);
   const timePart = Date.now().toString().slice(-8);
   const randomPart = crypto.randomInt(1000, 9999);
 
@@ -626,21 +614,24 @@ const generateUniqueVnpayTxnRef = async (orderCode: string) => {
   throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Không thể tạo mã giao dịch VNPay');
 };
 
-const ZALOPAY_TIMEZONE_OFFSET_MS = 7 * 60 * 60 * 1000;
+const getZalopayDatePrefix = () => {
+  const timezoneOffsetMs = 7 * 60 * 60 * 1000;
+  const local = new Date(Date.now() + timezoneOffsetMs);
+  const year = String(local.getUTCFullYear()).slice(2);
+  const month = String(local.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(local.getUTCDate()).padStart(2, '0');
 
-const buildZalopayAppTransId = (orderCode: string, now = new Date()) => {
-  const date = new Date(now.getTime() + ZALOPAY_TIMEZONE_OFFSET_MS);
-  const year = String(date.getUTCFullYear()).slice(-2);
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  const datePart = `${year}${month}${day}`;
-  const orderPart = orderCode
+  return `${year}${month}${day}`;
+};
+
+const buildZalopayAppTransId = (orderCode: string) => {
+  const datePart = getZalopayDatePrefix();
+  const compactOrderCode = orderCode
     .replace(/[^A-Z0-9]/gi, '')
     .toUpperCase()
-    .slice(-8);
+    .slice(-12);
   const randomPart = crypto.randomInt(1000, 9999);
-
-  return `${datePart}_${orderPart}${randomPart}`;
+  return `${datePart}_${compactOrderCode}${randomPart}`;
 };
 
 const generateUniqueZalopayTxnRef = async (orderCode: string) => {
@@ -928,7 +919,6 @@ export const createOrderFromCart = async (userId: string, input: CreateOrderInpu
     paymentUrl = zalopayResult.orderUrl;
   }
 
-
   const customer = await UserModel.findById(userObjectId).select('email fullName').lean();
 
   if (customer?.email) {
@@ -956,33 +946,6 @@ export const createOrderFromCart = async (userId: string, input: CreateOrderInpu
       totalAmount: created.totalAmount
     }
   });
-
-  if (paymentMethod === 'zalopay') {
-    const items = materializedItems.map((item) => ({
-      itemid: String(item.variant._id),
-      itemname: item.product.name,
-      itemprice: Math.round(item.variant.price),
-      itemquantity: item.snapshot.quantity
-    }));
-
-    const zalopayConfig = buildZalopayCheckoutConfig(input.zalopayChannel, {
-      orderId: String(created._id),
-      orderCode
-    });
-
-    const zalopayResult = await createZalopayPaymentUrl({
-      appTransId: paymentTxnRef ?? '',
-      appUser: String(userObjectId),
-      amount: totalAmount,
-      description: `Thanh toan don hang ${orderCode}`,
-      items,
-      embedData: zalopayConfig.embedData,
-      bankCode: zalopayConfig.bankCode,
-      redirectUrl: resolveZalopayRedirectUrl()
-    });
-
-    paymentUrl = zalopayResult.orderUrl;
-  }
 
   return {
     ...created.toObject(),
@@ -1040,7 +1003,9 @@ export const listMyOrders = async (
   }
 
   const orderIds = items.map((item) => item._id);
-  const productIds = [...new Set(items.flatMap((item) => item.items.map((orderItem) => orderItem.productId)))];
+  const productIds = [
+    ...new Set(items.flatMap((item) => item.items.map((orderItem) => orderItem.productId)))
+  ];
 
   const reviews = await ReviewModel.find({
     userId: toObjectId(userId, 'userId'),
@@ -1146,7 +1111,9 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
     totalComments,
     totalItemsSoldAggregate,
     topProducts,
-    bottomProducts
+    bottomProducts,
+    topVariantsAggregate,
+    bottomVariantsAggregate
   ] = await Promise.all([
     OrderModel.aggregate<{
       _id: null;
@@ -1468,7 +1435,10 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       : 0;
 
   const statusMap = new Map(
-    statusAggregate.map((item) => [item._id, { count: item.count, revenue: roundMoney(item.revenue) }])
+    statusAggregate.map((item) => [
+      item._id,
+      { count: item.count, revenue: roundMoney(item.revenue) }
+    ])
   );
   const byStatus = ORDER_STATUS_ORDER.map((status) => {
     const value = statusMap.get(status);
@@ -1785,9 +1755,7 @@ export const cancelMyOrder = async (userId: string, orderId: string, note?: stri
     orderId,
     status: 'cancelled',
     changedBy: userId,
-    note:
-      note ??
-      'Khách hàng hủy đơn'
+    note: note ?? 'Khách hàng hủy đơn'
   });
 };
 
@@ -1894,7 +1862,10 @@ export const createReturnRequest = async ({
     const allowedQty = orderItem.quantity - (alreadyRequested.get(item.variantId ?? '') ?? 0);
 
     if (requestedQty > allowedQty) {
-      throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Return quantity exceeds purchased quantity');
+      throw new ApiError(
+        StatusCodes.UNPROCESSABLE_ENTITY,
+        'Return quantity exceeds purchased quantity'
+      );
     }
 
     const price = orderItem.price;
@@ -1942,9 +1913,7 @@ export const updateReturnRequest = async ({
     throw new ApiError(StatusCodes.NOT_FOUND, 'Order not found');
   }
 
-  const request = order.returnRequests?.find(
-    (item) => String(item._id) === returnRequestId
-  );
+  const request = order.returnRequests?.find((item) => String(item._id) === returnRequestId);
 
   if (!request) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Return request not found');
@@ -1957,10 +1926,7 @@ export const updateReturnRequest = async ({
 
   if (status === 'refunded') {
     if (nextRefundMethod === 'bank_transfer' && evidenceImages.length === 0) {
-      throw new ApiError(
-        StatusCodes.UNPROCESSABLE_ENTITY,
-        'Refund evidence images are required'
-      );
+      throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Refund evidence images are required');
     }
   }
 
@@ -2025,7 +1991,11 @@ export const createCancelRefundRequest = async ({
     throw new ApiError(StatusCodes.NOT_FOUND, 'Order not found');
   }
 
-  if (order.status !== 'cancelled' || order.paymentMethod === 'cod' || order.paymentStatus !== 'paid') {
+  if (
+    order.status !== 'cancelled' ||
+    order.paymentMethod === 'cod' ||
+    order.paymentStatus !== 'paid'
+  ) {
     throw new ApiError(
       StatusCodes.UNPROCESSABLE_ENTITY,
       'Cancelled order is not eligible for refund request'
@@ -2092,20 +2062,14 @@ export const updateCancelRefundRequest = async ({
   }
 
   if (request.status === 'refunded' && status !== 'refunded') {
-    throw new ApiError(
-      StatusCodes.UNPROCESSABLE_ENTITY,
-      'Refund request already completed'
-    );
+    throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Refund request already completed');
   }
 
   const nextImages = (refundEvidenceImages ?? []).map((item) => item.trim()).filter(Boolean);
-  const evidenceImages = nextImages.length > 0 ? nextImages : request.refundEvidenceImages ?? [];
+  const evidenceImages = nextImages.length > 0 ? nextImages : (request.refundEvidenceImages ?? []);
 
   if (status === 'refunded' && evidenceImages.length === 0) {
-    throw new ApiError(
-      StatusCodes.UNPROCESSABLE_ENTITY,
-      'Refund evidence images are required'
-    );
+    throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Refund evidence images are required');
   }
 
   request.status = status;
@@ -2156,7 +2120,11 @@ export const updateCancelRefundRequest = async ({
   return order.toObject();
 };
 
-export const retryMyVnpayPayment = async ({ userId, orderId, clientIp }: RetryVnpayPaymentInput) => {
+export const retryMyVnpayPayment = async ({
+  userId,
+  orderId,
+  clientIp
+}: RetryVnpayPaymentInput) => {
   const order = await OrderModel.findOne({
     _id: toObjectId(orderId, 'orderId'),
     userId: toObjectId(userId, 'userId')
@@ -2328,6 +2296,7 @@ export const handleZalopayCallback = async (payload: Record<string, unknown>) =>
     };
   }
 
+  const wasPaid = order.paymentStatus === 'paid';
   order.paymentGatewayResponseCode = '1';
   order.paymentStatus = 'paid';
   order.paymentTransactionNo = verifyResult.data.zp_trans_id
@@ -2339,6 +2308,19 @@ export const handleZalopayCallback = async (payload: Record<string, unknown>) =>
   }
 
   await order.save();
+
+  if (!wasPaid) {
+    const customer = await UserModel.findById(order.userId).select('email fullName').lean();
+
+    if (customer?.email) {
+      sendOrderLifecycleMailInBackground({
+        to: customer.email,
+        customerName: customer.fullName,
+        order: order.toObject() as OrderMailSnapshot,
+        event: 'payment_success'
+      });
+    }
+  }
 
   return {
     return_code: 1,
@@ -2365,6 +2347,7 @@ export const handleZalopayRedirect = async (payload: Record<string, unknown>) =>
   }
 
   let responseCode = String(verifyResult.status ?? 0);
+  const wasPaid = order.paymentStatus === 'paid';
 
   if (verifyResult.status === 1 && order.paymentStatus !== 'paid') {
     try {
@@ -2406,7 +2389,7 @@ export const handleZalopayRedirect = async (payload: Record<string, unknown>) =>
     const customer = await UserModel.findById(order.userId).select('email fullName').lean();
 
     if (customer?.email) {
-      await sendOrderLifecycleMail({
+      sendOrderLifecycleMailInBackground({
         to: customer.email,
         customerName: customer.fullName,
         order: order.toObject() as OrderMailSnapshot,

@@ -83,7 +83,7 @@ export const deleteColor = async (colorId: string) => {
   if (existsInVariant) {
     throw new ApiError(
       StatusCodes.CONFLICT,
-      'Color is being used by a product variant and cannot be deleted'
+      'Color is being used by a product variants and cannot be deleted'
     );
   }
 
