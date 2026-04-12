@@ -9,7 +9,8 @@ export const listProductSchema = z.object({
     categoryId: z.string().optional(),
     brandId: z.string().optional(),
     brand: z.string().optional(),
-     colorIds: z.string().optional(),
+    colorIds: z.string().optional(),
+    sizeIds: z.string().optional(),
     priceRanges: z.string().optional(),
     search: z.string().optional(),
     isAvailable: z.enum(['true', 'false']).optional()
