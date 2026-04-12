@@ -176,6 +176,11 @@ const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   failed: 'Thanh toán thất bại',
   refunded: 'Đã hoàn tiền'
 };
+const CANCEL_REFUND_REQUEST_STATUS_LABELS: Record<CancelRefundRequestStatus, string> = {
+  pending: 'Chờ xử lý',
+  rejected: 'Từ chối',
+  refunded: 'Đã hoàn tiền'
+};
 
 type OrderMailSnapshot = Pick<
   OrderDocument,
@@ -410,14 +415,17 @@ interface SendCancelRefundProcessedMailInput {
   to: string;
   customerName?: string;
   order: OrderMailSnapshot;
-  refundRequest: NonNullable<OrderDocument['cancelRefundRequest']>;
-}
+  request: NonNullable<OrderDocument['cancelRefundRequest']>;
+  event: 'created' | 'status_updated';
+  previousStatus?: CancelRefundRequestStatus;
+  cancelReason?: string;
 
-const sendCancelRefundProcessedMail = async ({
+const sendCancelRefundLifecycleMail = async ({
   to,
   customerName,
   order,
-  refundRequest
+  refundRequest,
+  cancelReason
 }: SendCancelRefundProcessedMailInput) => {
   try {
     const billLinksHtml =
