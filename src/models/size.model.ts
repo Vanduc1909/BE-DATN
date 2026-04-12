@@ -2,7 +2,6 @@ import { model, Schema } from 'mongoose';
 
 export interface SizeDocument {
   name: string;
-  slug: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -11,7 +10,6 @@ export interface SizeDocument {
 const sizeSchema = new Schema<SizeDocument>(
   {
     name: { type: String, required: true, trim: true },
-    slug: { type: String, required: true, trim: true, unique: true, lowercase: true },
     isActive: { type: Boolean, default: true }
   },
   { timestamps: true }

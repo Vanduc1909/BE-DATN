@@ -70,6 +70,45 @@ export const listMyOrdersController = asyncHandler(async (req, res) => {
     data
   });
 });
+
+export const listAllOrdersController = asyncHandler(async (req, res) => {
+  const data = await listAllOrders({
+    page: res.locals.pagination?.page ?? 1,
+    limit: res.locals.pagination?.limit ?? 20,
+    search: getOptionalParam(req.query.search as string | string[] | undefined),
+    status: getOptionalParam(req.query.status as string | string[] | undefined) as
+      | OrderStatus
+      | undefined,
+    userId: getOptionalParam(req.query.userId as string | string[] | undefined)
+  });
+
+  return sendSuccess(res, {
+    message: 'Get all orders successfully',
+    data
+  });
+});
+
+export const getMyOrderByIdController = asyncHandler(async (req, res) => {
+  const data = await getMyOrderById(getUserId(req), getParam(req.params.orderId, 'orderId'));
+
+  return sendSuccess(res, {
+    message: 'Get order successfully',
+    data
+  });
+});
+
+export const cancelMyOrderController = asyncHandler(async (req, res) => {
+  const data = await cancelMyOrder(
+    getUserId(req),
+    getParam(req.params.orderId, 'orderId'),
+    req.body?.note
+  );
+  return sendSuccess(res, {
+    message: 'Cancel order successfully',
+    data
+  });
+});
+
 export const confirmOrderReceivedController = asyncHandler(async (req, res) => {
   const data = await confirmOrderReceived(getUserId(req), getParam(req.params.orderId, 'orderId'));
 
@@ -138,45 +177,6 @@ export const updateCancelRefundRequestController = asyncHandler(async (req, res)
 
   return sendSuccess(res, {
     message: 'Update cancel refund request successfully',
-    data
-  });
-});
-
-export const listAllOrdersController = asyncHandler(async (req, res) => {
-  const data = await listAllOrders({
-    page: res.locals.pagination?.page ?? 1,
-    limit: res.locals.pagination?.limit ?? 20,
-    search: getOptionalParam(req.query.search as string | string[] | undefined),
-    status: getOptionalParam(req.query.status as string | string[] | undefined) as
-      | OrderStatus
-      | undefined,
-    userId: getOptionalParam(req.query.userId as string | string[] | undefined)
-  });
-
-  return sendSuccess(res, {
-    message: 'Get all orders successfully',
-    data
-  });
-});
-
-export const getMyOrderByIdController = asyncHandler(async (req, res) => {
-  const data = await getMyOrderById(getUserId(req), getParam(req.params.orderId, 'orderId'));
-
-  return sendSuccess(res, {
-    message: 'Get order successfully',
-    data
-  });
-});
-
-export const cancelMyOrderController = asyncHandler(async (req, res) => {
-  const data = await cancelMyOrder(
-    getUserId(req),
-    getParam(req.params.orderId, 'orderId'),
-    req.body?.note
-  );
-
-  return sendSuccess(res, {
-    message: 'Cancel order successfully',
     data
   });
 });

@@ -1,0 +1,1 @@
+const ALLOWED_UPLOAD_FOLDERS: 

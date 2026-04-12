@@ -6,7 +6,8 @@ import {
   updateSize
 } from '@/services/size.service';
 import { asyncHandler } from '@/utils/async-handler';
-import { getParam, sendSuccess } from '@/utils/response';
+import { getParam } from '@/utils/response';
+import { sendSuccess } from '@/utils/response';
 import { StatusCodes } from 'http-status-codes';
 
 export const listSizesController = asyncHandler(async (req, res) => {

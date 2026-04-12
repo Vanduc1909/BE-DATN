@@ -7,7 +7,6 @@ import { StatusCodes } from 'http-status-codes';
 
 interface SizePayload {
   name: string;
-  slug: string;
   isActive?: boolean;
 }
 
@@ -25,7 +24,7 @@ export const listSizes = async (options: {
 
   if (options.search?.trim()) {
     const regex = new RegExp(options.search.trim(), 'i');
-    filters.$or = [{ name: regex }, { slug: regex }];
+    filters.$or = [{ name: regex }];
   }
 
   const totalItems = await SizeModel.countDocuments(filters);
@@ -51,7 +50,6 @@ export const getSizeById = async (sizeId: string) => {
 export const createSize = async (payload: SizePayload) => {
   const created = await SizeModel.create({
     name: payload.name,
-    slug: payload.slug,
     isActive: payload.isActive ?? true
   });
 
