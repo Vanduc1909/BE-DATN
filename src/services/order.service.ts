@@ -36,6 +36,7 @@ import { addMoney, roundMoney, subtractMoney } from '@utils/money';
 import { toObjectId } from '@utils/object-id';
 import { assertOrderTransitionAllowed } from '@utils/order-transition';
 import { toPaginatedData } from '@utils/pagination';
+import { StatusCodes } from 'http-status-codes';
 
 interface CreateOrderInput {
   addressId?: string;
@@ -135,6 +136,7 @@ interface VariantSalesAggregateItem {
 }
 
 const ORDER_STATUS_ORDER: OrderStatus[] = [
+  'awaiting_payment',
   'pending',
   'confirmed',
   'shipping',
@@ -148,6 +150,7 @@ const PAYMENT_METHOD_ORDER: PaymentMethod[] = ['cod', 'banking', 'momo', 'vnpay'
 const MONEY_FORMATTER = new Intl.NumberFormat('vi-VN');
 
 const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
+  awaiting_payment: 'Chờ thanh toán',
   pending: 'Chờ xác nhận',
   confirmed: 'Đã xác nhận',
   shipping: 'Đang giao',
@@ -170,6 +173,10 @@ const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   paid: 'Đã thanh toán',
   failed: 'Thanh toán thất bại',
   refunded: 'Đã hoàn tiền'
+};
+
+const isOnlinePaymentMethod = (paymentMethod: PaymentMethod) => {
+  return paymentMethod === 'vnpay' || paymentMethod === 'zalopay';
 };
 
 type OrderMailSnapshot = Pick<
@@ -817,6 +824,10 @@ export const createOrderFromCart = async (userId: string, input: CreateOrderInpu
   const zalopayChannel =
     paymentMethod === 'zalopay' ? resolveZalopayChannel(input.zalopayChannel) : undefined;
 
+  const initialStatus: OrderStatus = isOnlinePaymentMethod(paymentMethod)
+    ? 'awaiting_payment'
+    : 'pending';
+
   for (const item of materializedItems) {
     item.variant.stockQuantity = Math.max(0, item.variant.stockQuantity - item.snapshot.quantity);
 
@@ -861,11 +872,11 @@ export const createOrderFromCart = async (userId: string, input: CreateOrderInpu
     paymentStatus: 'pending',
     paymentTxnRef,
     voucherId: voucher?._id,
-    status: 'pending',
+    status: initialStatus,
     items: materializedItems.map((item) => item.snapshot),
     statusHistory: [
       {
-        status: 'pending',
+        status: initialStatus,
         changedBy: userObjectId,
         note: 'Order created',
         changedAt: new Date()
@@ -1135,7 +1146,11 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
           },
           processingOrders: {
             $sum: {
-              $cond: [{ $in: ['$status', ['pending', 'confirmed', 'shipping']] }, 1, 0]
+              $cond: [
+                { $in: ['$status', ['awaiting_payment', 'pending', 'confirmed', 'shipping']] },
+                1,
+                0
+              ]
             }
           },
           cancelledOrders: {
@@ -1673,6 +1688,25 @@ const normalizeBankAccountInfo = (input: {
   };
 };
 
+const markOrderAsPendingAfterOnlinePayment = async (
+  order: OrderDocument,
+  note = 'Thanh toán online thành công'
+) => {
+  if (order.status !== 'awaiting_payment') {
+    return false;
+  }
+
+  order.status = 'pending';
+  order.statusHistory.push({
+    status: 'pending',
+    changedBy: order.userId,
+    note,
+    changedAt: new Date()
+  });
+
+  return true;
+};
+
 export const updateOrderStatus = async ({
   orderId,
   status,
@@ -1744,10 +1778,14 @@ export const cancelMyOrder = async (userId: string, orderId: string, note?: stri
     throw new ApiError(StatusCodes.NOT_FOUND, 'Order not found');
   }
 
-  if (order.status !== 'pending' && order.status !== 'confirmed') {
+  if (
+    order.status !== 'awaiting_payment' &&
+    order.status !== 'pending' &&
+    order.status !== 'confirmed'
+  ) {
     throw new ApiError(
       StatusCodes.UNPROCESSABLE_ENTITY,
-      'Chỉ có thể hủy đơn khi đang chờ xác nhận hoặc đã xác nhận'
+      'Chỉ có thể hủy đơn khi đang chờ thanh toán hoặc đã xác nhận'
     );
   }
 
@@ -2138,10 +2176,10 @@ export const retryMyVnpayPayment = async ({
     throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Đơn hàng không dùng thanh toán online');
   }
 
-  if (order.status !== 'pending') {
+  if (order.status !== 'awaiting_payment') {
     throw new ApiError(
       StatusCodes.UNPROCESSABLE_ENTITY,
-      'Chỉ có thể thanh toán lại khi đơn đang ở trạng thái chờ xác nhận'
+      'Chỉ có thể thanh toán lại khi đơn đang ở trạng thái chờ thanh toán'
     );
   }
 
@@ -2229,6 +2267,7 @@ export const handleVnpayReturn = async (payload: Record<string, unknown>) => {
   if (verifiedResult.isSuccess) {
     order.paymentStatus = 'paid';
     order.paymentTransactionNo = verifiedResult.transactionNo;
+    markOrderAsPendingAfterOnlinePayment(order);
 
     if (!order.paidAt) {
       order.paidAt = new Date();
@@ -2302,6 +2341,7 @@ export const handleZalopayCallback = async (payload: Record<string, unknown>) =>
   order.paymentTransactionNo = verifyResult.data.zp_trans_id
     ? String(verifyResult.data.zp_trans_id)
     : order.paymentTransactionNo;
+  markOrderAsPendingAfterOnlinePayment(order);
 
   if (!order.paidAt) {
     order.paidAt = new Date();
@@ -2379,6 +2419,10 @@ export const handleZalopayRedirect = async (payload: Record<string, unknown>) =>
     order.paymentStatus !== 'refunded'
   ) {
     order.paymentStatus = 'failed';
+  }
+
+  if (order.paymentStatus === 'paid') {
+    markOrderAsPendingAfterOnlinePayment(order);
   }
 
   order.paymentGatewayResponseCode = responseCode;

@@ -21,7 +21,16 @@ export const listOrdersSchema = z.object({
     userId: z.string().optional(),
     search: z.string().optional(),
     status: z
-      .enum(['pending', 'confirmed', 'shipping', 'delivered', 'completed', 'cancelled', 'returned'])
+      .enum([
+        'awaiting_payment',
+        'pending',
+        'confirmed',
+        'shipping',
+        'delivered',
+        'completed',
+        'cancelled',
+        'returned'
+      ])
       .optional()
   })
 });
