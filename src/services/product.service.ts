@@ -11,6 +11,9 @@ import { toObjectId } from '@utils/object-id';
 import { toPaginatedData } from '@utils/pagination';
 import { StatusCodes } from 'http-status-codes';
 import type { Types } from 'mongoose';
+
+const MAX_PRODUCT_VARIANTS = 8;
+
 interface ProductPayload {
   name: string;
   categoryId: string;

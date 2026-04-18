@@ -1866,7 +1866,7 @@ export const cancelMyOrder = async (userId: string, orderId: string, note?: stri
     orderId,
     status: 'cancelled',
     changedBy: userId,
-    note: note ?? 'Khách hàng hủy đơn'
+    note: note?.trim() || 'Khách hàng hủy đơn'
   });
 };
 
