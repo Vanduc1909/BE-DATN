@@ -4,7 +4,6 @@ export interface BrandDocument {
   name: string;
   slug: string;
   description?: string;
-  logoUrl?: string;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -15,7 +14,6 @@ const brandSchema = new Schema<BrandDocument>(
     name: { type: String, required: true, trim: true },
     slug: { type: String, required: true, trim: true, unique: true, lowercase: true },
     description: { type: String },
-    logoUrl: { type: String },
     isActive: { type: Boolean, default: true }
   },
   { timestamps: true }

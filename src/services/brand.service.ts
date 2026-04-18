@@ -9,9 +9,25 @@ interface BrandPayload {
   name: string;
   slug: string;
   description?: string;
-  logoUrl?: string;
   isActive?: boolean;
 }
+const mapBrandResponse = (brand: {
+  _id?: unknown;
+  name?: string;
+  description?: string;
+  isActive?: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}) => {
+  return {
+    id: String(brand._id ?? ''),
+    name: brand.name ?? '',
+    description: brand.description,
+    isActive: brand.isActive ?? true,
+    createdAt: brand.createdAt,
+    updatedAt: brand.updatedAt
+  };
+};
 
 const excapeRegex = (value: string) => {
   return value.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
@@ -51,7 +67,12 @@ export const listBrands = async (options: {
     .limit(options.limit)
     .lean();
 
-  return toPaginatedData(items, totalItems, options.page, options.limit);
+   return toPaginatedData(
+    items.map((item) => mapBrandResponse(item)),
+    totalItems,
+    options.page,
+    options.limit
+  );
 };
 
 export const getBrandById = async (brandId: string) => {
@@ -60,7 +81,7 @@ export const getBrandById = async (brandId: string) => {
   if (!brand) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Brand not found');
   }
-  return brand;
+  return mapBrandResponse(brand);
 };
 
 export const getOrCreateBrandByName = async (brandName: string) => {
@@ -109,11 +130,10 @@ export const createBrand = async (payload: BrandPayload) => {
     name: payload.name.trim(),
     slug: payload.slug.trim().toLowerCase(),
     description: payload.description,
-    logoUrl: payload.logoUrl,
     isActive: payload.isActive ?? true
   });
 
-  return created.toObject();
+  return mapBrandResponse(created.toObject());
 };
 
 export const updateBrand = async (brandId: string, payload: Partial<BrandPayload>) => {
@@ -137,7 +157,7 @@ export const updateBrand = async (brandId: string, payload: Partial<BrandPayload
     throw new ApiError(StatusCodes.NOT_FOUND, 'Brand not found');
   }
 
-  return updated;
+  return mapBrandResponse(updated);
 };
 
 export const deleteBrand = async (brandId: string) => {
