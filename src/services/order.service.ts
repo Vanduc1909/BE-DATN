@@ -186,6 +186,12 @@ const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   refunded: 'Đã hoàn tiền'
 };
 
+const CANCEL_REFUND_REQUEST_STATUS_LABELS: Record<CancelRefundRequestStatus, string> = {
+  pending: 'Chờ xử lý',
+  rejected: 'Từ chối',
+  refunded: 'Đã hoàn tiền'
+};
+
 const isOnlinePaymentMethod = (paymentMethod: PaymentMethod) => {
   return paymentMethod === 'vnpay' || paymentMethod === 'zalopay';
 };
@@ -472,9 +478,9 @@ interface SendCancelRefundProcessedMailInput {
   to: string;
   customerName?: string;
   order: OrderMailSnapshot;
-  refundRequest: NonNullable<OrderDocument['cancelRefundRequest']>;
+  
 }
-
+refundRequest: NonNullable<OrderDocument['cancelRefundRequest']>;
 const sendCancelRefundProcessedMail = async ({
   to,
   customerName,
