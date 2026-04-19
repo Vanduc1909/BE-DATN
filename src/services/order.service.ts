@@ -1696,7 +1696,6 @@ export const getMyOrderById = async (userId: string, orderId: string) => {
   return enrichedOrder;
 };
 
-// worklog: 2026-03-04 13:56:52 | vanduc | feature | restoreStockForOrder
 const restoreStockForOrder = async (order: OrderDocument) => {
   for (const item of order.items) {
     const variant = await ProductVariantModel.findById(item.variantId);
