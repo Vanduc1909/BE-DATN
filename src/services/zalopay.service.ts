@@ -68,6 +68,7 @@ export interface ZalopayQueryResult {
   subReturnCode?: number;
   subReturnMessage?: string;
   zpTransId?: string;
+  isProcessing?: boolean;
 }
 
 const ZALOPAY_V1_CREATE_ENDPOINT = 'https://sandbox.zalopay.com.vn/v001/tpe/createorder';
@@ -334,8 +335,17 @@ export const queryZalopayOrderStatus = async (appTransId: string): Promise<Zalop
     sub_return_message?: string;
     zptransid?: string | number;
     zp_trans_id?: string | number;
+    isProcessing?: boolean | number | string;
+    is_processing?: boolean | number | string;
   };
 
+  const rawIsProcessing = data.isprocessing ?? data.is_processing;
+  const isProvessing = 
+      rawIsProcessing === true ||
+      rawIsProcessing === 1 ||
+      rawIsProcessing === '1' ||
+      rawIsProcessing === 'true';
+      
   return {
     returnCode: Number(data.returncode ?? data.return_code ?? 0),
     returnMessage: data.returnmessage ?? data.return_message,
@@ -345,6 +355,11 @@ export const queryZalopayOrderStatus = async (appTransId: string): Promise<Zalop
       ? String(data.zptransid)
       : data.zp_trans_id
         ? String(data.zp_trans_id)
-        : undefined
+        : undefined,
+        isProcessing
   };
+};
+
+export const isZalopayQueryStillProcessing = (result: Pick<ZalopayQueryResult, 'returnCode' | 'isProcessing'>) => {
+  return result.isProcessing === true || [2, 3, 4, 5, 6, 9].includes(result.returnCode);
 };
