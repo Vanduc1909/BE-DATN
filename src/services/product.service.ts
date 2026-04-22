@@ -1,5 +1,8 @@
 import { randomBytes } from 'node:crypto';
 
+import { StatusCodes } from 'http-status-codes';
+import type { Types } from 'mongoose';
+
 import { BrandModel } from '@models/brand.model';
 import { CategoryModel } from '@models/category.model';
 import { ColorModel } from '@models/color.model';
@@ -9,8 +12,6 @@ import { SizeModel } from '@models/size.model';
 import { ApiError } from '@utils/api-error';
 import { toObjectId } from '@utils/object-id';
 import { toPaginatedData } from '@utils/pagination';
-import { StatusCodes } from 'http-status-codes';
-import type { Types } from 'mongoose';
 
 const MAX_PRODUCT_VARIANTS = 8;
 
@@ -33,7 +34,7 @@ interface ProductVariantPayload {
   price: number;
   originalPrice?: number;
   stockQuantity?: number;
-  isAvailable: boolean;
+  isAvailable?: boolean;
   images?: string[];
 }
 
@@ -41,7 +42,7 @@ interface ProductCardVariantSnapshot {
   productId: unknown;
   price: number;
   originalPrice?: number;
-  isAvailable?: boolean;
+  isAvailable: boolean;
   images?: string[];
 }
 
@@ -63,6 +64,7 @@ interface ColorSnapshot {
   hexCode?: string;
   isActive?: boolean;
 }
+
 interface BrandSnapshot {
   _id: unknown;
   name?: string;
@@ -384,7 +386,7 @@ export const listProducts = async (options: {
 
   if (options.search?.trim()) {
     const regex = new RegExp(options.search.trim(), 'i');
-    filters.$or = [{ name: regex }, { brand: regex }];
+    filters.$or = [{ name: regex }];
   }
 
   const normalizedColorIds = (options.colorIds ?? [])
@@ -511,12 +513,12 @@ export const listProductFilters = async () => {
           _id: { $in: Array.from(categoryIds) },
           isActive: true
         })
-          .select('name slug image')
+          .select('name')
           .sort({ name: 1 })
           .lean()) as StorefrontCategorySnapshot[]
       ).map((category) => ({
         id: String(category._id),
-        name: category.name ?? 'Danh muc'
+        name: category.name ?? 'Danh mục'
       }))
     : [];
 
@@ -545,7 +547,6 @@ export const listProductFilters = async () => {
           colorId: { $ne: null }
         })
       : [];
-
   const sizeIds =
     productIds.length > 0
       ? await ProductVariantModel.distinct('sizeId', {
@@ -570,7 +571,6 @@ export const listProductFilters = async () => {
           hexCode: color.hexCode
         }))
       : [];
-
   const sizes =
     sizeIds.length > 0
       ? (
@@ -608,7 +608,6 @@ export const getProductById = async (productId: string) => {
     .populate('colorId', 'name hexCode')
     .populate('sizeId', 'name')
     .lean();
-
   const mappedVariants = (variants as unknown as Array<Record<string, unknown>>).map((variant) =>
     mapVariantResponse(variant)
   );
@@ -754,6 +753,15 @@ export const createProductVariant = async (productId: string, payload: ProductVa
 
   if (!product) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Product not found');
+  }
+
+  const currentVariantCount = await ProductVariantModel.countDocuments({ productId: _productId });
+
+  if (currentVariantCount >= MAX_PRODUCT_VARIANTS) {
+    throw new ApiError(
+      StatusCodes.BAD_REQUEST,
+      `Product cannot have more than ${MAX_PRODUCT_VARIANTS} variants`
+    );
   }
 
   const normalizedColorId = payload.colorId?.trim();

@@ -1,9 +1,10 @@
-import { ProductVariantModel } from '@/models/product-variant.model';
-import { SizeModel } from '@/models/size.model';
-import { ApiError } from '@/utils/api-error';
-import { toObjectId } from '@/utils/object-id';
-import { toPaginatedData } from '@/utils/pagination';
 import { StatusCodes } from 'http-status-codes';
+
+import { ProductVariantModel } from '@models/product-variant.model';
+import { SizeModel } from '@models/size.model';
+import { ApiError } from '@utils/api-error';
+import { toObjectId } from '@utils/object-id';
+import { toPaginatedData } from '@utils/pagination';
 
 interface SizePayload {
   name: string;
@@ -74,7 +75,9 @@ export const updateSize = async (sizeId: string, payload: Partial<SizePayload>) 
 
 export const deleteSize = async (sizeId: string) => {
   const _sizeId = toObjectId(sizeId, 'sizeId');
-  const existsInVariant = await ProductVariantModel.exists({ sizeId: _sizeId });
+  const existsInVariant = await ProductVariantModel.exists({
+    sizeId: _sizeId
+  });
 
   if (existsInVariant) {
     throw new ApiError(

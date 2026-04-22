@@ -209,10 +209,7 @@ const uniqueSuffix = () => `${Date.now()}-${faker.string.alphanumeric(6).toLower
 
 const randomImage = (seed: string) => `https://picsum.photos/seed/${seed}/1000/1000`;
 
-const dropCollectionIfExists = async (collection: {
-  name: string;
-  drop: () => Promise<unknown>;
-}) => {
+const dropCollectionIfExists = async (collection: { name: string; drop: () => Promise<unknown> }) => {
   try {
     await collection.drop();
   } catch (error) {
@@ -274,26 +271,23 @@ const seedUsers = async (count: number) => {
     staffStartDate: account.role !== 'customer' ? faker.date.past() : undefined
   }));
 
-  const randomUserPayloads = Array.from(
-    { length: targetCount - fixedUserPayloads.length },
-    (_, index) => {
-      const idPart = `${index + 1}-${uniqueSuffix()}`;
-      const role = roleCycle[index % roleCycle.length];
+  const randomUserPayloads = Array.from({ length: targetCount - fixedUserPayloads.length }, (_, index) => {
+    const idPart = `${index + 1}-${uniqueSuffix()}`;
+    const role = roleCycle[index % roleCycle.length];
 
-      return {
-        email: `user_${idPart}@example.com`,
-        passwordHash: defaultPasswordHash,
-        fullName: faker.person.fullName(),
-        phone: faker.phone.number({ style: 'international' }),
-        role,
-        avatarUrl: randomImage(`user-${idPart}`),
-        loyaltyPoints: faker.number.int({ min: 0, max: 10000 }),
-        membershipTier: faker.helpers.arrayElement(tierPool),
-        staffDepartment: role !== 'customer' ? faker.commerce.department() : undefined,
-        staffStartDate: role !== 'customer' ? faker.date.past() : undefined
-      };
-    }
-  );
+    return {
+      email: `user_${idPart}@example.com`,
+      passwordHash: defaultPasswordHash,
+      fullName: faker.person.fullName(),
+      phone: faker.phone.number({ style: 'international' }),
+      role,
+      avatarUrl: randomImage(`user-${idPart}`),
+      loyaltyPoints: faker.number.int({ min: 0, max: 10000 }),
+      membershipTier: faker.helpers.arrayElement(tierPool),
+      staffDepartment: role !== 'customer' ? faker.commerce.department() : undefined,
+      staffStartDate: role !== 'customer' ? faker.date.past() : undefined
+    };
+  });
 
   return UserModel.insertMany([...fixedUserPayloads, ...randomUserPayloads]);
 };
@@ -765,15 +759,7 @@ const seedOrders = async (
     const monthOffset = index % normalizedMonthSpan;
     const monthCursor = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1, 0, 0, 0, 0);
     const monthStart = new Date(monthCursor);
-    const monthEnd = new Date(
-      monthCursor.getFullYear(),
-      monthCursor.getMonth() + 1,
-      0,
-      23,
-      59,
-      0,
-      0
-    );
+    const monthEnd = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0, 23, 59, 0, 0);
     const createdTo = monthOffset === 0 ? latestCreatedAt : monthEnd;
     const createdFrom = monthStart;
     const createdAt = faker.date.between({
@@ -814,7 +800,7 @@ const seedOrders = async (
     const deliveredStatusAt =
       [...statusHistory].reverse().find((history) => history.status === 'delivered')?.changedAt ??
       undefined;
-    const paidAt = paymentStatus === 'paid' ? (deliveredStatusAt ?? updatedAt) : undefined;
+    const paidAt = paymentStatus === 'paid' ? deliveredStatusAt ?? updatedAt : undefined;
     const refundedAt = paymentStatus === 'refunded' ? updatedAt : undefined;
     const paymentTxnRef =
       paymentMethod !== 'cod' && paymentStatus !== 'pending'

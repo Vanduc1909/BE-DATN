@@ -14,18 +14,18 @@ interface SendMailInput {
 const EMAIL_ADDRESS_REGEX = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 
 const sanitizeHeaderValue = (value?: string) => {
-  return value?.replace(/[\r\n]+/g, '').trim();
+  return value?.replace(/[\r\n]+/g, ' ').trim();
 };
 
 const extractEmailAddress = (value?: string) => {
-  const nomalized = sanitizeHeaderValue(value);
+  const normalized = sanitizeHeaderValue(value);
 
-  if (!nomalized) {
+  if (!normalized) {
     return undefined;
   }
 
-  const angleMatch = nomalized.match(/<([^>]+)>/);
-  const candidate = (angleMatch ? angleMatch[1] : nomalized).trim();
+  const angleMatch = normalized.match(/<([^>]+)>/);
+  const candidate = (angleMatch ? angleMatch[1] : normalized).trim();
 
   return EMAIL_ADDRESS_REGEX.test(candidate) ? candidate : undefined;
 };
@@ -43,10 +43,10 @@ export const sendMail = async (input: SendMailInput) => {
     return false;
   }
 
-  const configuredForm = sanitizeHeaderValue(input.from ?? env.SMTP_FROM);
-  const fallbackSenderAddress = extractEmailAddress(env.SMTP_FROM);
-  const senderAddress = extractEmailAddress(configuredForm) || fallbackSenderAddress;
-  const senderHeader = extractEmailAddress(configuredForm) ? configuredForm : senderAddress;
+  const configuredFrom = sanitizeHeaderValue(input.from ?? env.SMTP_FROM);
+  const fallbackSenderAddress = extractEmailAddress(env.SMTP_USER);
+  const senderAddress = extractEmailAddress(configuredFrom) ?? fallbackSenderAddress;
+  const senderHeader = extractEmailAddress(configuredFrom) ? configuredFrom : senderAddress;
   const recipientAddress = extractEmailAddress(input.to);
   const replyToAddress = extractEmailAddress(input.replyTo);
 
@@ -56,7 +56,7 @@ export const sendMail = async (input: SendMailInput) => {
   }
 
   if (!recipientAddress) {
-    logger.warn(`Mailer recipient is invalid: ${input.to}. Email was not sent.`);
+    logger.warn(`Mailer recipient is invalid (${input.to}). Email was not sent.`);
     return false;
   }
 
@@ -68,6 +68,7 @@ export const sendMail = async (input: SendMailInput) => {
         from: senderAddress,
         to: recipientAddress
       },
+      subject: sanitizeHeaderValue(input.subject) ?? '',
       html: input.html,
       text: input.text,
       replyTo: replyToAddress

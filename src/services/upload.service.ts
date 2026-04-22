@@ -1,7 +1,8 @@
-import { cloudinary, isCloudinaryConfigured } from '@/config/cloudinary';
-import { ApiError } from '@/utils/api-error';
-import { UploadApiResponse } from 'cloudinary';
-import { StatusCodes } from 'http-status-codes/build/cjs/status-codes';
+import type { UploadApiResponse } from 'cloudinary';
+import { StatusCodes } from 'http-status-codes';
+
+import { cloudinary, isCloudinaryConfigured } from '@config/cloudinary';
+import { ApiError } from '@utils/api-error';
 
 export type UploadFolder = 'avatars' | 'products' | 'categories' | 'others';
 
@@ -10,6 +11,7 @@ interface UploadImageOptions {
   publicId?: string;
   overwrite?: boolean;
   maxWidth?: number;
+  maxHeight?: number;
 }
 
 interface UploadResult {
@@ -30,12 +32,15 @@ const toUploadResult = (res: UploadApiResponse): UploadResult => ({
   size: res.bytes
 });
 
+/**
+ * Upload ảnh từ buffer lên Cloudinary.
+ */
 export const uploadImageFromBuffer = async (
   buffer: Buffer,
   options: UploadImageOptions = {}
 ): Promise<UploadResult> => {
   if (!isCloudinaryConfigured()) {
-    throw new ApiError(StatusCodes.SERVICE_UNAVAILABLE, 'Cloudinary is not configured');
+    throw new ApiError(StatusCodes.SERVICE_UNAVAILABLE, 'Cloudinary chưa được cấu hình');
   }
 
   const {
@@ -65,7 +70,7 @@ export const uploadImageFromBuffer = async (
       },
       (error, result) => {
         if (error || !result) {
-          reject(new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Failed to upload image'));
+          return reject(new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Upload ảnh thất bại'));
         }
 
         resolve(toUploadResult(result));
@@ -76,12 +81,15 @@ export const uploadImageFromBuffer = async (
   });
 };
 
-export const uplaodImageFromUrl = async (
+/**
+ * Upload ảnh từ URL bên ngoài lên Cloudinary.
+ */
+export const uploadImageFromUrl = async (
   imageUrl: string,
   options: UploadImageOptions = {}
 ): Promise<UploadResult> => {
   if (!isCloudinaryConfigured()) {
-    throw new ApiError(StatusCodes.SERVICE_UNAVAILABLE, 'Cloudinary is not configured');
+    throw new ApiError(StatusCodes.SERVICE_UNAVAILABLE, 'Cloudinary chưa được cấu hình');
   }
 
   const { folder = 'others', publicId, overwrite = true } = options;
@@ -98,12 +106,16 @@ export const uplaodImageFromUrl = async (
       }
     ]
   });
+
   return toUploadResult(result);
 };
 
+/**
+ * Xoá ảnh khỏi Cloudinary theo publicId.
+ */
 export const deleteImage = async (publicId: string): Promise<void> => {
   if (!isCloudinaryConfigured()) {
-    throw new ApiError(StatusCodes.SERVICE_UNAVAILABLE, 'Cloudinary is not configured');
+    throw new ApiError(StatusCodes.SERVICE_UNAVAILABLE, 'Cloudinary chưa được cấu hình');
   }
 
   await cloudinary.uploader.destroy(publicId);

@@ -6,9 +6,8 @@ import { ZodError } from 'zod';
 import { env } from '@config/env';
 import { logger } from '@config/logger';
 import { ApiError } from '@utils/api-error';
+import { localizeMessage } from '@utils/message-localize';
 import type { NextFunction, Request, Response } from 'express';
-import { localizeMessage } from '@/utils/message-localize';
-import { de } from 'zod/v4/locales';
 
 export const errorMiddleware = (
   error: Error,

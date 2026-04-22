@@ -1,11 +1,12 @@
-import { CourseModel } from '@/models/course.model';
-import { EmployeeProgressModel } from '@/models/employee-progress.model';
-import { LessonModel } from '@/models/lesson.model';
-import { ModuleModel } from '@/models/module.model';
-import { ApiError } from '@/utils/api-error';
-import { toObjectId } from '@/utils/object-id';
-import { toPaginatedData } from '@/utils/pagination';
 import { StatusCodes } from 'http-status-codes';
+
+import { CourseModel } from '@models/course.model';
+import { EmployeeProgressModel } from '@models/employee-progress.model';
+import { LessonModel } from '@models/lesson.model';
+import { ModuleModel } from '@models/module.model';
+import { ApiError } from '@utils/api-error';
+import { toObjectId } from '@utils/object-id';
+import { toPaginatedData } from '@utils/pagination';
 
 interface CoursePayload {
   title: string;

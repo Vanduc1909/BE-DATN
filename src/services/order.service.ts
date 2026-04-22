@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 
+import { StatusCodes } from 'http-status-codes';
+
 import type {
   CancelRefundRequestStatus,
   OrderStatus,
@@ -38,7 +40,6 @@ import { addMoney, roundMoney, subtractMoney } from '@utils/money';
 import { toObjectId } from '@utils/object-id';
 import { assertOrderTransitionAllowed } from '@utils/order-transition';
 import { toPaginatedData } from '@utils/pagination';
-import { StatusCodes } from 'http-status-codes';
 
 interface CreateOrderInput {
   addressId?: string;
@@ -106,8 +107,13 @@ interface UpdateCancelRefundRequestInput {
   refundEvidenceImages?: string[];
 }
 
+type StatisticsPeriodInput = 'day' | 'week' | 'month' | 'custom';
+
 interface ListOrderStatisticsOptions {
-  days: number;
+  days?: number;
+  period?: StatisticsPeriodInput;
+  fromDate?: string;
+  toDate?: string;
 }
 
 interface DailyRevenueItem {
@@ -146,6 +152,18 @@ interface VariantSalesAggregateItem {
   revenue: number;
 }
 
+interface ProductSalesAggregateItem {
+  _id: unknown;
+  name: string;
+  brand: string;
+  soldCount: number;
+  revenue: number;
+  reviewCount: number;
+  averageRating: number;
+  isAvailable: boolean;
+  thumbnailUrl?: string | null;
+}
+
 const ORDER_STATUS_ORDER: OrderStatus[] = [
   'awaiting_payment',
   'pending',
@@ -159,6 +177,19 @@ const ORDER_STATUS_ORDER: OrderStatus[] = [
 
 const PAYMENT_METHOD_ORDER: PaymentMethod[] = ['cod', 'banking', 'momo', 'vnpay', 'zalopay'];
 const MONEY_FORMATTER = new Intl.NumberFormat('vi-VN');
+const DASHBOARD_TIME_ZONE = 'Asia/Ho_Chi_Minh';
+const DATE_KEY_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: DASHBOARD_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+});
+const DATE_LABEL_FORMATTER = new Intl.DateTimeFormat('vi-VN', {
+  timeZone: DASHBOARD_TIME_ZONE,
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric'
+});
 
 const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   awaiting_payment: 'Chờ thanh toán',
@@ -186,6 +217,12 @@ const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   refunded: 'Đã hoàn tiền'
 };
 
+const CANCEL_REFUND_REQUEST_STATUS_LABELS: Record<CancelRefundRequestStatus, string> = {
+  pending: 'Chờ xử lý',
+  rejected: 'Từ chối',
+  refunded: 'Đã hoàn tiền'
+};
+
 const RETURN_REQUEST_STATUS_LABELS: Record<ReturnRequestStatus, string> = {
   pending: 'Chờ xử lý',
   approved: 'Đã duyệt',
@@ -196,12 +233,6 @@ const RETURN_REQUEST_STATUS_LABELS: Record<ReturnRequestStatus, string> = {
 const REFUND_METHOD_LABELS: Record<RefundMethod, string> = {
   bank_transfer: 'Chuyển khoản',
   wallet: 'Hoàn vào ví'
-};
-
-const CANCEL_REFUND_REQUEST_STATUS_LABELS: Record<CancelRefundRequestStatus, string> = {
-  pending: 'Chờ xử lý',
-  rejected: 'Từ chối',
-  refunded: 'Đã hoàn tiền'
 };
 
 const isOnlinePaymentMethod = (paymentMethod: PaymentMethod) => {
@@ -305,27 +336,6 @@ const formatDateTime = (value?: Date | string) => {
     hour12: false,
     timeZone: 'Asia/Ho_Chi_Minh'
   });
-};
-
-const toReturnRequestMailSnapshot = (
-  request: NonNullable<OrderDocument['returnRequests']>[number]
-) => {
-  return {
-    status: request.status,
-    refundMethod: request.refundMethod,
-    refundAmount: request.refundAmount,
-    reason: request.reason,
-    refundEvidenceImages: request.refundEvidenceImages,
-    createAt: request.createdAt,
-    updateAt: request.updatedAt,
-    items: request.items.map((item) => ({
-      productName: item.productName,
-      variantSku: item.variantSku,
-      quantity: item.quantity,
-      price: item.price,
-      total: item.total
-    }))
-  };
 };
 
 const sendOrderLifecycleMail = async ({
@@ -511,230 +521,32 @@ interface SendCancelRefundProcessedMailInput {
   to: string;
   customerName?: string;
   order: OrderMailSnapshot;
-  refundRequest: NonNullable<OrderDocument['cancelRefundRequest']>;
-}
-
-interface ReturnRequestMailSnapshot {
-  status: ReturnRequestStatus;
-  refundMethod: RefundMethod;
-  refundAmount: number;
-  reason?: string;
-  note?: string;
-  refundEvidenceImages?: string[];
-  items: Array<{
-    productName: string;
-    variantSku: string;
-    quantity: number;
-    price: number;
-    total: number;
-  }>;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
-
-interface SendReturnRequestLifecycleMailInput {
-  to: string;
-  customerName?: string;
-  order: OrderMailSnapshot;
-  request: ReturnRequestMailSnapshot;
+  request: NonNullable<OrderDocument['cancelRefundRequest']>;
   event: 'created' | 'status_updated';
-  previousStatus?: ReturnRequestStatus;
-  orderMarkedReturned?: boolean;
+  previousStatus?: CancelRefundRequestStatus;
+  cancelReason?: string;
 }
 
-const sendReturnRequestLifecycleMail = async ({
+const sendCancelRefundLifecycleMail = async ({
   to,
   customerName,
   order,
   request,
   event,
   previousStatus,
-  orderMarkedReturned
-}: SendReturnRequestLifecycleMailInput) => {
-  try {
-    const itemsRowsHtml = request.items
-      .map((item, index) => {
-        return `
-          <tr>
-            <td style="padding:8px;border:1px solid #e5e7eb;text-align:center;">${index + 1}</td>
-            <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(item.productName)}</td>
-            <td style="padding:8px;border:1px solid #e5e7eb;">${escapeHtml(item.variantSku)}</td>
-            <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">${item.quantity}</td>
-            <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">${formatMoneyVnd(item.price)}</td>
-            <td style="padding:8px;border:1px solid #e5e7eb;text-align:right;">${formatMoneyVnd(item.total)}</td>
-          </tr>
-        `;
-      })
-      .join('');
-
-    const evidenceLinksHtml = request.refundEvidenceImages?.length
-      ? `
-          <div style="margin:16px 0;">
-            <p style="margin:0 0 8px;color:#111827;font-weight:700;">Ảnh minh chứng hoàn tiền</p>
-            <div style="display:flex;flex-wrap:wrap;gap:8px;">
-              ${request.refundEvidenceImages
-                .map(
-                  (url) => `
-                    <a href="${escapeHtml(url)}" target="_blank" rel="noreferrer" style="display:inline-block;">
-                      <img src="${escapeHtml(url)}" alt="Minh chứng hoàn tiền" style="width:120px;height:120px;object-fit:cover;border:1px solid #e5e7eb;border-radius:8px;" />
-                    </a>
-                  `
-                )
-                .join('')}
-            </div>
-          </div>
-        `
-      : '';
-
-    const evidenceLinksText = request.refundEvidenceImages?.length
-      ? `\nẢnh minh chứng hoàn tiền:\n${request.refundEvidenceImages.join('\n')}\n`
-      : '';
-
-    const introHtml =
-      event === 'created'
-        ? `<p style="margin:0 0 12px;color:#374151;">Chúng tôi đã nhận yêu cầu hoàn hàng cho đơn <strong>${escapeHtml(order.orderCode)}</strong>.</p>`
-        : `
-      <p style="margin:0 0 12px;color:#374151;">
-        Yêu cầu hoàn hàng của bạn đã được cập nhật từ
-        <strong>${RETURN_REQUEST_STATUS_LABELS[previousStatus ?? request.status]}</strong>
-        sang
-        <strong>${RETURN_REQUEST_STATUS_LABELS[request.status]}</strong>.
-      </p>
-    `;
-
-    const orderReturnedHtml = orderMarkedReturned
-      ? `
-        <p style="margin:0 0 12px;color:#374151;">
-           Đơn hàng đã được chuyển sang trạng thái <strong>${ORDER_STATUS_LABELS.returned}</strong>.
-      </p>
-      `
-      : '';
-
-    const subject =
-      event === 'created'
-        ? `[Golden Billiards] Đã nhận yêu cầu hoàn hàng ${order.orderCode}`
-        : `[Golden Billiards] Cập nhật yêu cầu hoàn hàng ${order.orderCode}`;
-
-    const textItems = request.items
-      .map((item, index) => {
-        return `${index + 1}. ${item.productName} | SKU: ${item.variantSku} | SL: ${item.quantity} | Đơn giá: ${formatMoneyVnd(item.price)} | Thành tiền: ${formatMoneyVnd(item.total)}`;
-      })
-      .join('\n');
-
-    const text =
-      `Xin chào ${customerName ?? order.shippingRecipientName ?? 'bạn'},\n\n` +
-      `${
-        event === 'created'
-          ? 'Chúng tôi đã nhận được yêu cầu hoàn hàng cho đơn ${order.orderCode}.'
-          : `Yêu cầu hoàn hàng của bạn đã được cập nhật trạng thái từ ${RETURN_REQUEST_STATUS_LABELS[previousStatus ?? request.status]} sang ${RETURN_REQUEST_STATUS_LABELS[request.status]}.`
-      }\n` +
-      `${orderMarkedReturned ? `\nĐơn hàng đã được chuyển sang trạng thái ${ORDER_STATUS_LABELS.returned}.\n` : ''}` +
-      `\nMã đơn: ${order.orderCode}\n` +
-      `Trang thái yêu cầu: ${RETURN_REQUEST_STATUS_LABELS[request.status]}\n` +
-      `Phương thức hoàn tiền: ${REFUND_METHOD_LABELS[request.refundMethod]}\n` +
-      `Số tiền hoàn dự kiến: ${formatMoneyVnd(request.refundAmount)}\n` +
-      `${request.reason ? `Lý do hoàn hàng: ${request.reason}\n` : ''}` +
-      `${request.note ? `Ghi chú xử lý: ${request.note}\n` : ''}` +
-      `Ngày tạo yêu cầu: ${formatDateTime(request.createdAt)}\n` +
-      `Cập nhật gần nhất: ${formatDateTime(request.updatedAt)}\n` +
-      `\nSản phẩm hoàn hàng:\n${textItems}\n` +
-      `${evidenceLinksText}` +
-      `\nCảm ơn bạn đã mua sắm tại Golden Billiards.`;
-
-    const html = `
-<!DOCTYPE html>
-<html lang="vi">
-<head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="padding:24px 0;background:#f3f4f6;">
-    <tr>
-      <td align="center">
-        <table width="760" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;">
-          <tr>
-            <td style="background:#111827;padding:20px 24px;">
-              <h1 style="margin:0;color:#ffffff;font-size:20px;">Golden Billiards</h1>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding:24px;">
-              <p style="margin:0 0 12px;color:#111827;">Xin chào <strong>${escapeHtml(
-                customerName ?? order.shippingRecipientName ?? 'bạn'
-              )}</strong>,</p>
-              ${introHtml}
-              ${orderReturnedHtml}
-
-              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:16px;">
-                <tr><td style="padding:6px 0;color:#6b7280;width:180px;">Mã đơn</td><td style="padding:6px 0;color:#111827;">${escapeHtml(order.orderCode)}</td></tr>
-                <tr><td style="padding:6px 0;color:#6b7280;">Trang thái yêu cầu</td><td style="padding:6px 0;color:#111827;">${RETURN_REQUEST_STATUS_LABELS[request.status]}</td></tr>
-                <tr><td style="padding:6px 0;color:#6b7280;">Phương thức hoàn tiền</td><td style="padding:6px 0;color:#111827;">${REFUND_METHOD_LABELS[request.refundMethod]}</td></tr>
-                <tr><td style="padding:6px 0;color:#6b7280;">Số tiền hoàn dự kiến</td><td style="padding:6px 0;color:#111827;">${formatMoneyVnd(request.refundAmount)}</td></tr>
-                                <tr><td style="padding:6px 0;color:#6b7280;">Ngày tạo yêu cầu</td><td style="padding:6px 0;color:#111827;">${formatDateTime(request.createdAt)}</td></tr>
-                <tr><td style="padding:6px 0;color:#6b7280;">Cập nhật gần nhất</td><td style="padding:6px 0;color:#111827;">${formatDateTime(request.updatedAt)}</td></tr>
-                   ${request.reason ? `<tr><td style="padding:6px 0;color:#6b7280;">Lý do hoàn hàng</td><td style="padding:6px 0;color:#111827;">${escapeHtml(request.reason)}</td></tr>` : ''}
-                   ${request.note ? `<tr><td style="padding:6px 0;color:#6b7280;">Ghi chú xử lý</td><td style="padding:6px 0;color:#111827;">${escapeHtml(request.note)}</td></tr>` : ''}
-              </table>
-
-              <h3 style="margin:16px 0 8px;color:#111827;">Sản phẩm hoàn hàng</h3>
-              <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:16px;">
-                <thead>
-                  <tr style="background:#f9fafb;">
-                    <th style="padding:8px;border:1px solid #e5e7eb;">#</th>
-                    <th style="padding:8px;border:1px solid #e5e7eb;">Sản phẩm</th>
-                    <th style="padding:8px;border:1px solid #e5e7eb;">SKU</th>
-                    <th style="padding:8px;border:1px solid #e5e7eb;text-align:right;">SL</th>
-                    <th style="padding:8px;border:1px solid #e5e7eb;text-align:right;">Đơn giá</th>
-                    <th style="padding:8px;border:1px solid #e5e7eb;text-align:right;">Thành tiền</th>
-                  </tr>
-                </thead>
-                <tbody>${itemsRowsHtml}</tbody>
-              </table>
-
-              ${evidenceLinksHtml}
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-
-    const sent = await sendMail({
-      to,
-      subject,
-      html,
-      text
-    });
-
-    if (!sent) {
-      logger.warn(`Không thể gửi email hoàn hàng đơn ${order.orderCode} tới ${to}`);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    logger.error(`Lỗi gửi email hoàn hàng: ${(error as Error).message}`);
-    return false;
-  }
-};
-
-const sendCancelRefundProcessedMail = async ({
-  to,
-  customerName,
-  order,
-  refundRequest
+  cancelReason
 }: SendCancelRefundProcessedMailInput) => {
   try {
-    const billLinksHtml = refundRequest.refundEvidenceImages?.length
+    const evidenceLinksHtml = request.refundEvidenceImages?.length
       ? `
       <div style="margin:16px 0;">
-        <p style="margin:0 0 8px;color:#111827;font-weight:700;">Ảnh bill chuyển khoản</p>
+        <p style="margin:0 0 8px;color:#111827;font-weight:700;">Minh chứng hoàn tiền</p>
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
-          ${refundRequest.refundEvidenceImages
+          ${request.refundEvidenceImages
             .map(
               (url) => `
                 <a href="${escapeHtml(url)}" target="_blank" rel="noreferrer" style="display:inline-block;">
-                  <img src="${escapeHtml(url)}" alt="Bill hoàn tiền" style="width:120px;height:120px;object-fit:cover;border:1px solid #e5e7eb;border-radius:8px;" />
+                  <img src="${escapeHtml(url)}" alt="Minh chứng hoàn tiền" style="width:120px;height:120px;object-fit:cover;border:1px solid #e5e7eb;border-radius:8px;" />
                 </a>
               `
             )
@@ -744,21 +556,59 @@ const sendCancelRefundProcessedMail = async ({
     `
       : '';
 
-    const billLinksText = refundRequest.refundEvidenceImages?.length
-      ? `\nẢnh bill chuyển khoản:\n${refundRequest.refundEvidenceImages.join('\n')}\n`
+    const evidenceLinksText = request.refundEvidenceImages?.length
+      ? `\nMinh chứng hoàn tiền:\n${request.refundEvidenceImages.join('\n')}\n`
       : '';
 
-    const subject = `[Golden Billiards] Đã hoàn tiền đơn hàng ${order.orderCode}`;
+    const resolvedSubject =
+      event === 'created'
+        ? `[Golden Billiards] Đã nhận yêu cầu hoàn tiền ${order.orderCode}`
+        : request.status === 'refunded'
+          ? `[Golden Billiards] Đã hoàn tiền đơn hàng ${order.orderCode}`
+          : request.status === 'rejected'
+            ? `[Golden Billiards] Yêu cầu hoàn tiền bị từ chối ${order.orderCode}`
+            : `[Golden Billiards] Cập nhật yêu cầu hoàn tiền ${order.orderCode}`;
+
+    const resolvedIntroHtml =
+      event === 'created'
+        ? `<p style="margin:0 0 12px;color:#374151;">Chúng tôi đã nhận yêu cầu hoàn tiền cho đơn hàng đã hủy <strong>${escapeHtml(order.orderCode)}</strong>.</p>`
+        : request.status === 'refunded'
+          ? `<p style="margin:0 0 12px;color:#374151;">Cửa hàng đã hoàn tiền thành công cho đơn hàng <strong>${escapeHtml(order.orderCode)}</strong>.</p>`
+          : request.status === 'rejected'
+            ? `<p style="margin:0 0 12px;color:#374151;">Yêu cầu hoàn tiền cho đơn hàng <strong>${escapeHtml(order.orderCode)}</strong> đã bị từ chối.</p>`
+            : `
+      <p style="margin:0 0 12px;color:#374151;">
+        Yêu cầu hoàn tiền của bạn đã được cập nhật từ
+        <strong>${CANCEL_REFUND_REQUEST_STATUS_LABELS[previousStatus ?? request.status]}</strong>
+        sang
+        <strong>${CANCEL_REFUND_REQUEST_STATUS_LABELS[request.status]}</strong>.
+      </p>
+    `;
+
     const text =
       `Xin chào ${customerName ?? order.shippingRecipientName ?? 'bạn'},\n\n` +
-      `Yêu cầu hoàn tiền cho đơn hàng ${order.orderCode} đã được xử lý thành công.\n` +
-      `Số tiền hoàn: ${formatMoneyVnd(refundRequest.refundAmount)}\n` +
-      `Ngân hàng nhận: ${refundRequest.bankName}\n` +
-      `Số tài khoản: ${refundRequest.accountNumber}\n` +
-      `Chủ tài khoản: ${refundRequest.accountHolder}\n` +
-      `${refundRequest.adminNote ? `Ghi chú từ cửa hàng: ${refundRequest.adminNote}\n` : ''}` +
-      `Thời gian hoàn: ${formatDateTime(refundRequest.processedAt ?? new Date())}\n` +
-      `${billLinksText}` +
+      `${
+        event === 'created'
+          ? `Chúng tôi đã nhận yêu cầu hoàn tiền cho đơn hàng đã hủy ${order.orderCode}.`
+          : request.status === 'refunded'
+            ? `Cửa hàng đã hoàn tiền thành công cho đơn hàng ${order.orderCode}.`
+            : request.status === 'rejected'
+              ? `Yêu cầu hoàn tiền cho đơn hàng ${order.orderCode} đã bị từ chối.`
+              : `Yêu cầu hoàn tiền của bạn đã được cập nhật từ ${CANCEL_REFUND_REQUEST_STATUS_LABELS[previousStatus ?? request.status]} sang ${CANCEL_REFUND_REQUEST_STATUS_LABELS[request.status]}.`
+      }\n` +
+      `\nMã đơn: ${order.orderCode}\n` +
+      `Trạng thái yêu cầu: ${CANCEL_REFUND_REQUEST_STATUS_LABELS[request.status]}\n` +
+      `Số tiền hoàn: ${formatMoneyVnd(request.refundAmount)}\n` +
+      `Ngân hàng nhận: ${request.bankName}\n` +
+      `Số tài khoản: ${request.accountNumber}\n` +
+      `Chủ tài khoản: ${request.accountHolder}\n` +
+      `${cancelReason ? `Lý do hủy đơn: ${cancelReason}\n` : ''}` +
+      `${request.note ? `Ghi chú của khách hàng: ${request.note}\n` : ''}` +
+      `${request.adminNote ? `Ghi chú từ cửa hàng: ${request.adminNote}\n` : ''}` +
+      `Thời gian tạo yêu cầu: ${formatDateTime(request.requestedAt)}\n` +
+      `Cập nhật gần nhất: ${formatDateTime(request.updatedAt)}\n` +
+      `${request.processedAt ? `Thời gian xử lý: ${formatDateTime(request.processedAt)}\n` : ''}` +
+      `${evidenceLinksText}` +
       `\nCảm ơn bạn đã mua sắm tại Golden Billiards.`;
 
     const html = `
@@ -780,24 +630,40 @@ const sendCancelRefundProcessedMail = async ({
               <p style="margin:0 0 12px;color:#111827;">Xin chào <strong>${escapeHtml(
                 customerName ?? order.shippingRecipientName ?? 'bạn'
               )}</strong>,</p>
-              <p style="margin:0 0 12px;color:#374151;">
-                Cửa hàng đã hoàn tiền thành công cho đơn hàng <strong>${escapeHtml(order.orderCode)}</strong>.
-              </p>
+              ${resolvedIntroHtml}
 
               <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:16px;">
-                <tr><td style="padding:6px 0;color:#6b7280;width:180px;">Số tiền hoàn</td><td style="padding:6px 0;color:#111827;">${formatMoneyVnd(refundRequest.refundAmount)}</td></tr>
-                <tr><td style="padding:6px 0;color:#6b7280;">Ngân hàng</td><td style="padding:6px 0;color:#111827;">${escapeHtml(refundRequest.bankName)}</td></tr>
-                <tr><td style="padding:6px 0;color:#6b7280;">Số tài khoản</td><td style="padding:6px 0;color:#111827;">${escapeHtml(refundRequest.accountNumber)}</td></tr>
-                <tr><td style="padding:6px 0;color:#6b7280;">Chủ tài khoản</td><td style="padding:6px 0;color:#111827;">${escapeHtml(refundRequest.accountHolder)}</td></tr>
-                <tr><td style="padding:6px 0;color:#6b7280;">Thời gian hoàn</td><td style="padding:6px 0;color:#111827;">${formatDateTime(refundRequest.processedAt ?? new Date())}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;width:180px;">Mã đơn</td><td style="padding:6px 0;color:#111827;">${escapeHtml(order.orderCode)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Trạng thái yêu cầu</td><td style="padding:6px 0;color:#111827;">${CANCEL_REFUND_REQUEST_STATUS_LABELS[request.status]}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Số tiền hoàn</td><td style="padding:6px 0;color:#111827;">${formatMoneyVnd(request.refundAmount)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Ngân hàng</td><td style="padding:6px 0;color:#111827;">${escapeHtml(request.bankName)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Số tài khoản</td><td style="padding:6px 0;color:#111827;">${escapeHtml(request.accountNumber)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Chủ tài khoản</td><td style="padding:6px 0;color:#111827;">${escapeHtml(request.accountHolder)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Thời gian tạo yêu cầu</td><td style="padding:6px 0;color:#111827;">${formatDateTime(request.requestedAt)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6b7280;">Cập nhật gần nhất</td><td style="padding:6px 0;color:#111827;">${formatDateTime(request.updatedAt)}</td></tr>
                 ${
-                  refundRequest.adminNote
-                    ? `<tr><td style="padding:6px 0;color:#6b7280;">Ghi chú</td><td style="padding:6px 0;color:#111827;">${escapeHtml(refundRequest.adminNote)}</td></tr>`
+                  request.processedAt
+                    ? `<tr><td style="padding:6px 0;color:#6b7280;">Thời gian xử lý</td><td style="padding:6px 0;color:#111827;">${formatDateTime(request.processedAt)}</td></tr>`
+                    : ''
+                }
+                ${
+                  cancelReason
+                    ? `<tr><td style="padding:6px 0;color:#6b7280;">Lý do hủy đơn</td><td style="padding:6px 0;color:#111827;">${escapeHtml(cancelReason)}</td></tr>`
+                    : ''
+                }
+                ${
+                  request.note
+                    ? `<tr><td style="padding:6px 0;color:#6b7280;">Ghi chú khách hàng</td><td style="padding:6px 0;color:#111827;">${escapeHtml(request.note)}</td></tr>`
+                    : ''
+                }
+                ${
+                  request.adminNote
+                    ? `<tr><td style="padding:6px 0;color:#6b7280;">Ghi chú cửa hàng</td><td style="padding:6px 0;color:#111827;">${escapeHtml(request.adminNote)}</td></tr>`
                     : ''
                 }
               </table>
 
-              ${billLinksHtml}
+              ${evidenceLinksHtml}
             </td>
           </tr>
         </table>
@@ -809,7 +675,7 @@ const sendCancelRefundProcessedMail = async ({
 
     const sent = await sendMail({
       to,
-      subject,
+      subject: resolvedSubject,
       html,
       text
     });
@@ -826,21 +692,28 @@ const sendCancelRefundProcessedMail = async ({
   }
 };
 
+const getLatestCancelledOrderNote = (order: Pick<OrderDocument, 'statusHistory'>) => {
+  return [...order.statusHistory]
+    .reverse()
+    .find((history) => history.status === 'cancelled')
+    ?.note?.trim();
+};
 const sendOrderLifecycleMailInBackground = (input: SendOrderLifecycleMailInput) => {
   void sendOrderLifecycleMail(input);
 };
 
-const sendReturnRequestLifecycleMailInBackground = (input: SendReturnRequestLifecycleMailInput) => {
-  void sendReturnRequestLifecycleMail(input);
-};
-
-const sendCancelRefundProcessedMailInBackground = (input: SendCancelRefundProcessedMailInput) => {
-  void sendCancelRefundProcessedMail(input);
+const sendCancelRefundLifecycleMailInBackground = (input: SendCancelRefundProcessedMailInput) => {
+  void sendCancelRefundLifecycleMail(input);
 };
 
 // worklog: 2026-03-04 09:35:15 | dung | refactor | toDateKey
 const toDateKey = (value: Date) => {
-  return value.toISOString().slice(0, 10);
+  const parts = DATE_KEY_FORMATTER.formatToParts(value);
+  const year = parts.find((part) => part.type === 'year')?.value ?? '0000';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
+  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
+
+  return `${year}-${month}-${day}`;
 };
 
 // worklog: 2026-03-04 21:22:04 | vanduc | fix | buildDateRange
@@ -852,6 +725,109 @@ const buildDateRange = (days: number) => {
   fromDate.setHours(0, 0, 0, 0);
 
   return { fromDate, toDate };
+};
+
+const parseStatisticsDate = (value?: string) => {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
+};
+
+const getStatisticsRangeLabel = (
+  period: StatisticsPeriodInput | 'rolling',
+  days: number,
+  fromDate: Date,
+  toDate: Date
+) => {
+  if (period === 'day') {
+    return 'Hôm nay';
+  }
+
+  if (period === 'week') {
+    return '7 ngày gần nhất';
+  }
+
+  if (period === 'month') {
+    return '30 ngày gần nhất';
+  }
+
+  if (period === 'rolling') {
+    return `${days} ngày gần nhất`;
+  }
+
+  return `${DATE_LABEL_FORMATTER.format(fromDate)} - ${DATE_LABEL_FORMATTER.format(toDate)}`;
+};
+
+const buildStatisticsDateRange = (options: ListOrderStatisticsOptions) => {
+  const normalizedDays = Math.min(Math.max(Math.trunc(options.days ?? 7), 1), 90);
+
+  if (options.period === 'custom') {
+    const parsedFromDate = parseStatisticsDate(options.fromDate);
+    const parsedToDate = parseStatisticsDate(options.toDate);
+
+    if (!parsedFromDate || !parsedToDate) {
+      throw new ApiError(StatusCodes.BAD_REQUEST, 'Invalid statistics date range');
+    }
+
+    const fromDate =
+      parsedFromDate <= parsedToDate ? new Date(parsedFromDate) : new Date(parsedToDate);
+    const toDate =
+      parsedFromDate <= parsedToDate ? new Date(parsedToDate) : new Date(parsedFromDate);
+    const days =
+      Math.min(
+        Math.max(
+          Math.ceil((toDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000)) + 1,
+          1
+        ),
+        90
+      );
+
+    return {
+      fromDate,
+      toDate,
+      days,
+      period: 'custom' as const,
+      label: getStatisticsRangeLabel('custom', days, fromDate, toDate)
+    };
+  }
+
+  const period = options.period;
+  const daysByPeriod: Record<Exclude<StatisticsPeriodInput, 'custom'>, number> = {
+    day: 1,
+    week: 7,
+    month: 30
+  };
+
+  if (period === 'day' || period === 'week' || period === 'month') {
+    const days = daysByPeriod[period];
+    const { fromDate, toDate } = buildDateRange(days);
+
+    return {
+      fromDate,
+      toDate,
+      days,
+      period,
+      label: getStatisticsRangeLabel(period, days, fromDate, toDate)
+    };
+  }
+
+  const { fromDate, toDate } = buildDateRange(normalizedDays);
+
+  return {
+    fromDate,
+    toDate,
+    days: normalizedDays,
+    period: 'rolling' as const,
+    label: getStatisticsRangeLabel('rolling', normalizedDays, fromDate, toDate)
+  };
 };
 
 const AUTO_COMPLETE_DAYS = 3;
@@ -903,6 +879,7 @@ const generateOrderCode = () => {
   return `ORD-${datePart}-${randomPart}`;
 };
 
+// worklog: 2026-03-04 09:25:21 | vanduc | refactor | buildVnpayTxnRef
 const buildVnpayTxnRef = (orderCode: string) => {
   const compactOrderCode = orderCode
     .replace(/[^A-Z0-9]/gi, '')
@@ -997,7 +974,8 @@ const buildZalopayCheckoutConfig = (
   };
 };
 
-const resolveShippingInfo = async (userId: string, input: CreaterOrderInput) => {
+// worklog: 2026-03-04 19:46:44 | dung | fix | resolveShippingInfo
+const resolveShippingInfo = async (userId: string, input: CreateOrderInput) => {
   if (input.addressId) {
     const address = await AddressModel.findOne({
       _id: toObjectId(input.addressId, 'addressId'),
@@ -1129,7 +1107,6 @@ export const createOrderFromCart = async (userId: string, input: CreateOrderInpu
   const paymentMethod = input.paymentMethod ?? 'cod';
   const zalopayChannel =
     paymentMethod === 'zalopay' ? resolveZalopayChannel(input.zalopayChannel) : undefined;
-
   const initialStatus: OrderStatus = isOnlinePaymentMethod(paymentMethod)
     ? 'awaiting_payment'
     : 'pending';
@@ -1360,17 +1337,12 @@ export const listAllOrders = async (options: {
   limit: number;
   search?: string;
   status?: OrderStatus;
-  userId?: string;
 }) => {
   await autoCompleteDeliveredOrders();
   const filters: Record<string, unknown> = {};
 
   if (options.status) {
     filters.status = options.status;
-  }
-
-  if (options.userId) {
-    filters.userId = toObjectId(options.userId, 'userId');
   }
 
   const searchFilter = buildOrderSearchFilter(options.search);
@@ -1418,8 +1390,17 @@ export const listAllOrders = async (options: {
 
 export const getOrderStatistics = async (options: ListOrderStatisticsOptions) => {
   await autoCompleteDeliveredOrders();
-  const normalizedDays = Math.min(Math.max(Math.trunc(options.days), 1), 90);
-  const { fromDate, toDate } = buildDateRange(normalizedDays);
+  const { fromDate, toDate, days, period, label } = buildStatisticsDateRange(options);
+  const statisticsRangeMatch = {
+    createdAt: {
+      $gte: fromDate,
+      $lte: toDate
+    }
+  } satisfies Record<string, unknown>;
+  const completedStatisticsMatch = {
+    ...statisticsRangeMatch,
+    status: 'completed'
+  } satisfies Record<string, unknown>;
 
   const [
     orderSummaryAggregate,
@@ -1454,18 +1435,23 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       deliveredRevenue: number;
     }>([
       {
+        $match: statisticsRangeMatch
+      },
+      {
         $group: {
           _id: null,
           totalOrders: { $sum: 1 },
           deliveredOrders: {
             $sum: {
-              $cond: [{ $in: ['$status', ['delivered', 'completed']] }, 1, 0]
+              $cond: [{ $eq: ['$status', 'completed'] }, 1, 0]
             }
           },
           processingOrders: {
             $sum: {
               $cond: [
-                { $in: ['$status', ['awaiting_payment', 'pending', 'confirmed', 'shipping']] },
+                {
+                  $in: ['$status', ['awaiting_payment', 'pending', 'confirmed', 'shipping', 'delivered']]
+                },
                 1,
                 0
               ]
@@ -1479,7 +1465,7 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
           grossRevenue: { $sum: '$totalAmount' },
           deliveredRevenue: {
             $sum: {
-              $cond: [{ $in: ['$status', ['delivered', 'completed']] }, '$totalAmount', 0]
+              $cond: [{ $eq: ['$status', 'completed'] }, '$totalAmount', 0]
             }
           }
         }
@@ -1491,12 +1477,15 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       revenue: number;
     }>([
       {
+        $match: statisticsRangeMatch
+      },
+      {
         $group: {
           _id: '$status',
           count: { $sum: 1 },
           revenue: {
             $sum: {
-              $cond: [{ $in: ['$status', ['delivered', 'completed']] }, '$totalAmount', 0]
+              $cond: [{ $eq: ['$status', 'completed'] }, '$totalAmount', 0]
             }
           }
         }
@@ -1508,12 +1497,15 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       revenue: number;
     }>([
       {
+        $match: statisticsRangeMatch
+      },
+      {
         $group: {
           _id: '$paymentMethod',
           count: { $sum: 1 },
           revenue: {
             $sum: {
-              $cond: [{ $in: ['$status', ['delivered', 'completed']] }, '$totalAmount', 0]
+              $cond: [{ $eq: ['$status', 'completed'] }, '$totalAmount', 0]
             }
           }
         }
@@ -1570,13 +1562,13 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
           orderIds: { $addToSet: '$_id' },
           deliveredOrderIds: {
             $addToSet: {
-              $cond: [{ $in: ['$status', ['delivered', 'completed']] }, '$_id', null]
+              $cond: [{ $eq: ['$status', 'completed'] }, '$_id', null]
             }
           },
           items: { $sum: '$items.quantity' },
           revenue: {
             $sum: {
-              $cond: [{ $in: ['$status', ['delivered', 'completed']] }, '$items.total', 0]
+              $cond: [{ $eq: ['$status', 'completed'] }, '$items.total', 0]
             }
           }
         }
@@ -1621,18 +1613,19 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
           _id: {
             $dateToString: {
               format: '%Y-%m-%d',
-              date: '$createdAt'
+              date: '$createdAt',
+              timezone: DASHBOARD_TIME_ZONE
             }
           },
           orders: { $sum: 1 },
           deliveredOrders: {
             $sum: {
-              $cond: [{ $in: ['$status', ['delivered', 'completed']] }, 1, 0]
+              $cond: [{ $eq: ['$status', 'completed'] }, 1, 0]
             }
           },
           revenue: {
             $sum: {
-              $cond: [{ $in: ['$status', ['delivered', 'completed']] }, '$totalAmount', 0]
+              $cond: [{ $eq: ['$status', 'completed'] }, '$totalAmount', 0]
             }
           }
         }
@@ -1659,9 +1652,7 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
     CommentModel.countDocuments({ targetModel: 'product', isHidden: { $ne: true } }),
     OrderModel.aggregate<{ _id: null; totalItemsSold: number }>([
       {
-        $match: {
-          status: { $in: ['delivered', 'completed'] }
-        }
+        $match: completedStatisticsMatch
       },
       { $unwind: '$items' },
       {
@@ -1673,21 +1664,141 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
         }
       }
     ]),
-    ProductModel.find({})
-      .sort({ soldCount: -1, reviewCount: -1, createdAt: -1 })
-      .limit(8)
-      .select('name brand soldCount reviewCount averageRating isAvailable images')
-      .lean(),
-    ProductModel.find({})
-      .sort({ soldCount: 1, reviewCount: 1, createdAt: -1 })
-      .limit(8)
-      .select('name brand soldCount reviewCount averageRating isAvailable images')
-      .lean(),
+    OrderModel.aggregate<ProductSalesAggregateItem>([
+      {
+        $match: completedStatisticsMatch
+      },
+      {
+        $unwind: '$items'
+      },
+      {
+        $group: {
+          _id: '$items.productId',
+          soldCount: { $sum: '$items.quantity' },
+          revenue: { $sum: '$items.total' },
+          snapshotName: { $first: '$items.productName' },
+          snapshotImage: { $first: '$items.productImage' }
+        }
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      {
+        $unwind: {
+          path: '$product',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          name: {
+            $ifNull: ['$product.name', '$snapshotName']
+          },
+          brand: {
+            $ifNull: ['$product.brand', 'Generic']
+          },
+          soldCount: 1,
+          revenue: 1,
+          reviewCount: {
+            $ifNull: ['$product.reviewCount', 0]
+          },
+          averageRating: {
+            $ifNull: ['$product.averageRating', 0]
+          },
+          isAvailable: {
+            $ifNull: ['$product.isAvailable', false]
+          },
+          thumbnailUrl: {
+            $ifNull: [{ $arrayElemAt: ['$product.images', 0] }, '$snapshotImage']
+          }
+        }
+      },
+      {
+        $sort: {
+          soldCount: -1,
+          revenue: -1,
+          name: 1
+        }
+      },
+      {
+        $limit: 8
+      }
+    ]),
+    OrderModel.aggregate<ProductSalesAggregateItem>([
+      {
+        $match: completedStatisticsMatch
+      },
+      {
+        $unwind: '$items'
+      },
+      {
+        $group: {
+          _id: '$items.productId',
+          soldCount: { $sum: '$items.quantity' },
+          revenue: { $sum: '$items.total' },
+          snapshotName: { $first: '$items.productName' },
+          snapshotImage: { $first: '$items.productImage' }
+        }
+      },
+      {
+        $lookup: {
+          from: 'products',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'product'
+        }
+      },
+      {
+        $unwind: {
+          path: '$product',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          name: {
+            $ifNull: ['$product.name', '$snapshotName']
+          },
+          brand: {
+            $ifNull: ['$product.brand', 'Generic']
+          },
+          soldCount: 1,
+          revenue: 1,
+          reviewCount: {
+            $ifNull: ['$product.reviewCount', 0]
+          },
+          averageRating: {
+            $ifNull: ['$product.averageRating', 0]
+          },
+          isAvailable: {
+            $ifNull: ['$product.isAvailable', false]
+          },
+          thumbnailUrl: {
+            $ifNull: [{ $arrayElemAt: ['$product.images', 0] }, '$snapshotImage']
+          }
+        }
+      },
+      {
+        $sort: {
+          soldCount: 1,
+          revenue: 1,
+          name: 1
+        }
+      },
+      {
+        $limit: 8
+      }
+    ]),
     OrderModel.aggregate<VariantSalesAggregateItem>([
       {
-        $match: {
-          status: { $in: ['delivered', 'completed'] }
-        }
+        $match: completedStatisticsMatch
       },
       {
         $unwind: '$items'
@@ -1716,9 +1827,7 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
     ]),
     OrderModel.aggregate<VariantSalesAggregateItem>([
       {
-        $match: {
-          status: { $in: ['delivered', 'completed'] }
-        }
+        $match: completedStatisticsMatch
       },
       {
         $unwind: '$items'
@@ -1891,7 +2000,9 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       totalComments
     },
     trends: {
-      days: normalizedDays,
+      days,
+      period,
+      label,
       fromDate: fromDate.toISOString(),
       toDate: toDate.toISOString(),
       dailyRevenue
@@ -1909,7 +2020,7 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       reviewCount: product.reviewCount,
       averageRating: product.averageRating,
       isAvailable: product.isAvailable,
-      thumbnailUrl: product.images[0] ?? null
+      thumbnailUrl: product.thumbnailUrl ?? null
     })),
     bottomProducts: bottomProducts.map((product) => ({
       productId: String(product._id),
@@ -1919,7 +2030,7 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
       reviewCount: product.reviewCount,
       averageRating: product.averageRating,
       isAvailable: product.isAvailable,
-      thumbnailUrl: product.images[0] ?? null
+      thumbnailUrl: product.thumbnailUrl ?? null
     })),
     topVariants: topVariantsAggregate.map((item) => mapVariantStats(item)),
     bottomVariants: bottomVariantsAggregate.map((item) => mapVariantStats(item))
@@ -1938,7 +2049,7 @@ export const getMyOrderById = async (userId: string, orderId: string) => {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Order not found');
   }
 
-  const [enrichedOrder] = await attachVoucherSnapshots([order as Record<string, unknown>]);
+  const [enrichedOrder] = await attachVoucherSnapshots([order as unknown as Record<string, unknown>]);
 
   return enrichedOrder;
 };
@@ -2008,7 +2119,7 @@ const normalizeBankAccountInfo = (input: {
   };
 };
 
-const markOrderAsPendingAfterOnlinePayment = async (
+const markOrderAsPendingAfterOnlinePayment = (
   order: OrderDocument,
   note = 'Thanh toán online thành công'
 ) => {
@@ -2105,7 +2216,7 @@ export const cancelMyOrder = async (userId: string, orderId: string, note?: stri
   ) {
     throw new ApiError(
       StatusCodes.UNPROCESSABLE_ENTITY,
-      'Chỉ có thể hủy đơn khi đang chờ thanh toán hoặc đã xác nhận'
+      'Chỉ có thể hủy đơn khi đang chờ thanh toán, chờ xác nhận hoặc đã xác nhận'
     );
   }
 
@@ -2254,19 +2365,6 @@ export const createReturnRequest = async ({
 
   await order.save();
 
-  const createdRequest = order.returnRequests?.[order.returnRequests.length - 1];
-  const customer = await UserModel.findById(order.userId).select('email fullName').lean();
-
-  if (customer?.email && createdRequest) {
-    sendOrderLifecycleMailInBackground({
-      to: customer.email,
-      customerName: customer.fullName,
-      order: order.toObject() as OrderMailSnapshot,
-      request: toReturnRequestMailSnapshot(createdRequest),
-      event: 'created'
-    });
-  }
-
   return order.toObject();
 };
 
@@ -2342,20 +2440,6 @@ export const updateReturnRequest = async ({
 
   await order.save();
 
-  const customer = await UserModel.findById(order.userId).select('email fullName').lean();
-
-  if (customer?.email && previousRequestStatus !== status) {
-    sendReturnRequestLifecycleMailInBackground({
-      to: customer.email,
-      customerName: customer.fullName,
-      order: order.toObject() as OrderMailSnapshot,
-      request: toReturnRequestMailSnapshot(request),
-      event: 'status_updated',
-      previousStatus: previousRequestStatus,
-      orderMarkedReturned: order.status === 'returned'
-    });
-  }
-
   return order.toObject();
 };
 
@@ -2425,6 +2509,19 @@ export const createCancelRefundRequest = async ({
 
   await order.save();
 
+  const customer = await UserModel.findById(order.userId).select('email fullName').lean();
+
+  if (customer?.email && order.cancelRefundRequest) {
+    sendCancelRefundLifecycleMailInBackground({
+      to: customer.email,
+      customerName: customer.fullName,
+      order: order.toObject() as OrderMailSnapshot,
+      request: order.cancelRefundRequest,
+      event: 'created',
+      cancelReason: getLatestCancelledOrderNote(order)
+    });
+  }
+
   return order.toObject();
 };
 
@@ -2451,6 +2548,7 @@ export const updateCancelRefundRequest = async ({
     throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Refund request already completed');
   }
 
+  const previousRequestStatus = request.status;
   const nextImages = (refundEvidenceImages ?? []).map((item) => item.trim()).filter(Boolean);
   const evidenceImages = nextImages.length > 0 ? nextImages : (request.refundEvidenceImages ?? []);
 
@@ -2490,17 +2588,18 @@ export const updateCancelRefundRequest = async ({
 
   await order.save();
 
-  if (status === 'refunded') {
-    const customer = await UserModel.findById(order.userId).select('email fullName').lean();
+  const customer = await UserModel.findById(order.userId).select('email fullName').lean();
 
-    if (customer?.email && order.cancelRefundRequest) {
-      sendCancelRefundProcessedMailInBackground({
-        to: customer.email,
-        customerName: customer.fullName,
-        order: order.toObject() as OrderMailSnapshot,
-        refundRequest: order.cancelRefundRequest
-      });
-    }
+  if (customer?.email && order.cancelRefundRequest && previousRequestStatus !== status) {
+    sendCancelRefundLifecycleMailInBackground({
+      to: customer.email,
+      customerName: customer.fullName,
+      order: order.toObject() as OrderMailSnapshot,
+      request: order.cancelRefundRequest,
+      event: 'status_updated',
+      previousStatus: previousRequestStatus,
+      cancelReason: getLatestCancelledOrderNote(order)
+    });
   }
 
   return order.toObject();
@@ -2718,6 +2817,7 @@ export const handleZalopayCallback = async (payload: Record<string, unknown>) =>
 
 export const handleZalopayRedirect = async (payload: Record<string, unknown>) => {
   const verifyResult = verifyZalopayRedirect(payload as unknown as ZalopayRedirectPayload);
+
   if (!verifyResult.isVerified) {
     throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Invalid ZaloPay checksum');
   }
@@ -2749,12 +2849,14 @@ export const handleZalopayRedirect = async (payload: Record<string, unknown>) =>
         if (!order.paidAt) {
           order.paidAt = new Date();
         }
-      } else if (isZalopayQueryStillProcessing(queryResult) && order.paymentStatus !== 'refunded') {
-        order.paymentStatus = 'refunded'
-      } {
+      } else if (
+        isZalopayQueryStillProcessing(queryResult) &&
+        order.paymentStatus !== 'refunded'
+      ) {
         order.paymentStatus = 'pending';
       } else if (
-        !isZalopayQueryStillProcessing(queryResult) && order.paymentStatus !== 'refunded'
+        !isZalopayQueryStillProcessing(queryResult) &&
+        order.paymentStatus !== 'refunded'
       ) {
         order.paymentStatus = 'failed';
       }

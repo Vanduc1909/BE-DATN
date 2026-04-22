@@ -1,14 +1,9 @@
-import {
-  createSize,
-  deleteSize,
-  getSizeById,
-  listSizes,
-  updateSize
-} from '@/services/size.service';
-import { asyncHandler } from '@/utils/async-handler';
-import { getParam } from '@/utils/response';
-import { sendSuccess } from '@/utils/response';
 import { StatusCodes } from 'http-status-codes';
+
+import { createSize, deleteSize, getSizeById, listSizes, updateSize } from '@services/size.service';
+import { asyncHandler } from '@utils/async-handler';
+import { getParam } from '@utils/request';
+import { sendSuccess } from '@utils/response';
 
 export const listSizesController = asyncHandler(async (req, res) => {
   const data = await listSizes({

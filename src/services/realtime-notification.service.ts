@@ -1,6 +1,6 @@
+import { logger } from '@config/logger';
 import { getSocketServer } from '@config/socket';
-import { sendBackofficeWebPushNotification } from './push-notification.service';
-import { logger } from '@/config/logger';
+import { sendBackofficeWebPushNotification } from '@services/push-notification.service';
 
 export const STAFF_NOTIFICATION_ROOM = 'backoffice:notifications';
 
@@ -31,9 +31,9 @@ export const emitStaffRealtimeNotification = (payload: StaffRealtimeNotification
     title: payload.title,
     body: payload.body,
     url: payload.url,
-    tag:`staff-${payload.type}-${payload.id}`,
+    tag: `staff-${payload.type}-${payload.id}`,
     metadata: payload.metadata
   }).catch((error) => {
-    logger.error(`Failed to send web push notification for staff notification: ${(error as Error).message}`);
+    logger.error(`Failed to broadcast Web Push notification: ${(error as Error).message}`);
   });
 };
