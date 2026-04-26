@@ -26,6 +26,11 @@ interface ListAvailableVouchersOptions {
   userId?: string;
 }
 
+const buildActiveVoucherFilters = (filters: Record<string, unknown> = {}) => ({
+  deletedAt: null,
+  ...filters
+});
+
 const assertVoucherUsageConfig = (usageLimit: number, maxUsagePerUser: number) => {
   if (maxUsagePerUser >= usageLimit) {
     throw new ApiError(
@@ -63,7 +68,7 @@ export const listVouchers = async (options: {
   isActive?: boolean;
   code?: string;
 }) => {
-  const filters: Record<string, unknown> = {};
+  const filters: Record<string, unknown> = buildActiveVoucherFilters();
 
   if (typeof options.isActive === 'boolean') {
     filters.isActive = options.isActive;
@@ -90,10 +95,12 @@ export const listAvailableVouchersForCheckout = async (
   const now = new Date();
 
   const items = await VoucherModel.find({
-    isActive: true,
-    startDate: { $lte: now },
-    expirationDate: { $gte: now },
-    $expr: { $lt: ['$usedCount', '$usageLimit'] }
+    ...buildActiveVoucherFilters({
+      isActive: true,
+      startDate: { $lte: now },
+      expirationDate: { $gte: now },
+      $expr: { $lt: ['$usedCount', '$usageLimit'] }
+    }),
   })
     .sort({ expirationDate: 1, createdAt: -1 })
     .lean();
@@ -131,7 +138,11 @@ export const listAvailableVouchersForCheckout = async (
 
 // worklog: 2026-03-04 21:58:50 | dung | cleanup | getVoucherById
 export const getVoucherById = async (voucherId: string) => {
-  const voucher = await VoucherModel.findById(toObjectId(voucherId, 'voucherId')).lean();
+  const voucher = await VoucherModel.findOne(
+    buildActiveVoucherFilters({
+      _id: toObjectId(voucherId, 'voucherId')
+    })
+  ).lean();
 
   if (!voucher) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Voucher not found');
@@ -182,7 +193,11 @@ export const updateVoucher = async (voucherId: string, payload: Partial<VoucherP
     );
   }
 
-  const existed = await VoucherModel.findById(toObjectId(voucherId, 'voucherId')).lean();
+  const existed = await VoucherModel.findOne(
+    buildActiveVoucherFilters({
+      _id: toObjectId(voucherId, 'voucherId')
+    })
+  ).lean();
 
   if (!existed) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Voucher not found');
@@ -230,7 +245,18 @@ export const updateVoucher = async (voucherId: string, payload: Partial<VoucherP
 
 // worklog: 2026-03-04 13:56:52 | vanduc | feature | deleteVoucher
 export const deleteVoucher = async (voucherId: string) => {
-  const deleted = await VoucherModel.findByIdAndDelete(toObjectId(voucherId, 'voucherId')).lean();
+  const deleted = await VoucherModel.findOneAndUpdate(
+    buildActiveVoucherFilters({
+      _id: toObjectId(voucherId, 'voucherId')
+    }),
+    {
+      isActive: false,
+      deletedAt: new Date()
+    },
+    {
+      returnDocument: 'after'
+    }
+  ).lean();
 
   if (!deleted) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Voucher not found');
@@ -254,7 +280,11 @@ export const applyVoucherForSubtotal = async (
   }
 
   const now = new Date();
-  const voucher = await VoucherModel.findOne({ code: voucherCode.trim().toUpperCase() }).lean();
+  const voucher = await VoucherModel.findOne(
+    buildActiveVoucherFilters({
+      code: voucherCode.trim().toUpperCase()
+    })
+  ).lean();
 
   if (!voucher) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy voucher');

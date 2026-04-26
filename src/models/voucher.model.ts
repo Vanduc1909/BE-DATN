@@ -15,6 +15,7 @@ export interface VoucherDocument {
   maxUsagePerUser: number;
   usedCount: number;
   isActive: boolean;
+  deletedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,7 +33,8 @@ const voucherSchema = new Schema<VoucherDocument>(
     usageLimit: { type: Number, required: true, min: 0 },
     maxUsagePerUser: { type: Number, required: true, min: 1 },
     usedCount: { type: Number, default: 0, min: 0 },
-    isActive: { type: Boolean, default: true }
+    isActive: { type: Boolean, default: true },
+    deletedAt: { type: Date, default: null }
   },
   { timestamps: true }
 );
