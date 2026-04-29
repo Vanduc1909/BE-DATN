@@ -239,6 +239,18 @@ const isOnlinePaymentMethod = (paymentMethod: PaymentMethod) => {
   return paymentMethod === 'vnpay' || paymentMethod === 'zalopay';
 };
 
+const markCodOrderAsPaidOnCompletion = (order: OrderDocument) => {
+  if (order.paymentMethod !== 'cod' || order.paymentStatus === 'paid') {
+    return;
+  }
+
+  order.paymentStatus = 'paid';
+
+  if (!order.paidAt) {
+    order.paidAt = new Date();
+  }
+};
+
 const attachVoucherSnapshots = async <T extends Record<string, unknown>>(orders: T[]) => {
   const voucherIds = Array.from(
     new Set(
@@ -2174,6 +2186,11 @@ export const updateOrderStatus = async ({
   if (status === 'completed' && !order.completedAt) {
     order.completedAt = new Date();
   }
+
+  if (status === 'completed') {
+    markCodOrderAsPaidOnCompletion(order);
+  }
+
   order.statusHistory.push({
     status,
     changedBy: toObjectId(changedBy, 'changedBy'),
@@ -2249,6 +2266,7 @@ export const confirmOrderReceived = async (userId: string, orderId: string) => {
   if (!order.completedAt) {
     order.completedAt = new Date();
   }
+  markCodOrderAsPaidOnCompletion(order);
 
   order.statusHistory.push({
     status: 'completed',
