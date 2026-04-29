@@ -42,17 +42,17 @@ interface SeedOptions {
 }
 
 const defaultOptions: SeedOptions = {
-  users: 30,
-  categories: 8,
-  brands: 12,
-  products: 40,
-  variantsPerProduct: 4,
-  vouchers: 10,
-  carts: 20,
-  orders: 180,
-  orderMonthsSpan: 6,
-  reviews: 80,
-  clear: false
+  users: 0,
+  categories: 0,
+  brands: 0,
+  products: 0,
+  variantsPerProduct: 0,
+  vouchers: 0,
+  carts: 0,
+  orders: 0,
+  orderMonthsSpan: 0,
+  reviews: 0,
+  clear: true
 };
 
 const FIXED_SEED_USERS: Array<{
@@ -223,31 +223,23 @@ const dropCollectionIfExists = async (collection: { name: string; drop: () => Pr
 };
 
 const clearCollections = async () => {
-  const collections = [
-    ReviewModel.collection,
-    OrderModel.collection,
-    CartModel.collection,
-    InventoryLogModel.collection,
-    ProductVariantModel.collection,
-    ProductModel.collection,
-    VoucherModel.collection,
-    AddressModel.collection,
-    CategoryModel.collection,
-    BrandModel.collection,
-    UserModel.collection,
-    ColorModel.collection,
-    SizeModel.collection
-  ];
-
-  for (const collection of collections) {
-    await dropCollectionIfExists(collection);
-  }
+  await ReviewModel.deleteMany({})
+    await OrderModel.deleteMany({})
+    await CartModel.deleteMany({})
+    await InventoryLogModel.deleteMany({})
+    await ProductVariantModel.deleteMany({})
+    await ProductModel.deleteMany({})
+    await VoucherModel.deleteMany({})
+    await AddressModel.deleteMany({})
+    await CategoryModel.deleteMany({})
+    await BrandModel.deleteMany({})
+    await UserModel.deleteMany({})
+    await ColorModel.deleteMany({})
+    await SizeModel.deleteMany({})
 };
 
 const seedUsers = async (count: number) => {
-  if (count === 0) {
-    return [];
-  }
+
 
   const defaultPasswordHash = await bcrypt.hash('12345678', 10);
   const targetCount = Math.max(count, FIXED_SEED_USERS.length);
@@ -270,25 +262,9 @@ const seedUsers = async (count: number) => {
     staffStartDate: account.role !== 'customer' ? faker.date.past() : undefined
   }));
 
-  const randomUserPayloads = Array.from({ length: targetCount - fixedUserPayloads.length }, (_, index) => {
-    const idPart = `${index + 1}-${uniqueSuffix()}`;
-    const role = roleCycle[index % roleCycle.length];
 
-    return {
-      email: `user_${idPart}@example.com`,
-      passwordHash: defaultPasswordHash,
-      fullName: faker.person.fullName(),
-      phone: faker.phone.number({ style: 'international' }),
-      role,
-      avatarUrl: randomImage(`user-${idPart}`),
-      loyaltyPoints: faker.number.int({ min: 0, max: 10000 }),
-      membershipTier: faker.helpers.arrayElement(tierPool),
-      staffDepartment: role !== 'customer' ? faker.commerce.department() : undefined,
-      staffStartDate: role !== 'customer' ? faker.date.past() : undefined
-    };
-  });
 
-  return UserModel.insertMany([...fixedUserPayloads, ...randomUserPayloads]);
+  return UserModel.insertMany([...fixedUserPayloads]);
 };
 
 const seedAddresses = async (userIds: Types.ObjectId[]) => {
@@ -987,10 +963,7 @@ const main = async () => {
 
   await connectMongo();
 
-  if (options.clear) {
-    logger.info('Clearing collections before seed...');
-    await clearCollections();
-  }
+ await clearCollections();
 
   logger.info(`Seed options: ${JSON.stringify(options)}`);
 

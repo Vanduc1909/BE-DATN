@@ -12,6 +12,8 @@ interface CategoryPayload {
   isActive?: boolean;
 }
 
+export const DEFAULT_CATEGORY_NAME = 'Không xác định';
+
 export const listCategories = async (options: {
   page: number;
   limit: number;
@@ -20,6 +22,11 @@ export const listCategories = async (options: {
 }) => {
   const filters: Record<string, unknown> = {};
 
+  const fallbackCategory = await CategoryModel.findOne({
+    name: DEFAULT_CATEGORY_NAME
+  });
+
+  filters._id = { $ne: fallbackCategory?._id };
   if (typeof options.isActive === 'boolean') {
     filters.isActive = options.isActive;
   }
@@ -77,25 +84,68 @@ export const updateCategory = async (categoryId: string, payload: Partial<Catego
   return updated;
 };
 
+const getOrCreateFallbackCategory = async () => {
+  const fallbackCategory = await CategoryModel.findOne({
+    name: DEFAULT_CATEGORY_NAME
+  });
+
+  if (fallbackCategory) {
+    if (fallbackCategory.isActive === false) {
+      fallbackCategory.isActive = true;
+      await fallbackCategory.save();
+    }
+
+    return fallbackCategory;
+  }
+
+  return CategoryModel.create({
+    name: DEFAULT_CATEGORY_NAME,
+    description: 'Danh mục mặc định cho sản phẩm chưa xác định',
+    isActive: true
+  });
+};
+
 export const deleteCategory = async (categoryId: string) => {
   const targetId = toObjectId(categoryId, 'categoryId');
-  const fallback =
-    (await CategoryModel.findOne({ name: 'Không xác định' }).lean()) ??
-    (await CategoryModel.create({
-      name: 'Không xác định',
-      description: 'Danh mục mặc định khi danh mục cũ đã bị xóa.',
-      isActive: true
-    }));
+  const existingCategory = await CategoryModel.findById(targetId);
 
-  await ProductModel.updateMany({ categoryId: targetId }, { categoryId: fallback._id });
-
-  const deleted = await CategoryModel.findByIdAndDelete(targetId).lean();
-
-  if (!deleted) {
+  if (!existingCategory) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Category not found');
   }
 
+  if (existingCategory.name.trim().toLowerCase() === DEFAULT_CATEGORY_NAME.toLowerCase()) {
+    throw new ApiError(
+      StatusCodes.UNPROCESSABLE_ENTITY,
+      'Không thể xóa danh mục mặc định Không xác định'
+    );
+  }
+
+  const fallbackCategory = await getOrCreateFallbackCategory();
+  await ProductModel.updateMany(
+    {
+      categoryId: targetId
+    },
+    {
+      $set: {
+        categoryId: fallbackCategory._id
+      }
+    }
+  );
+
+  await ProductModel.updateMany(
+    {
+      categoryId: targetId
+    },
+    {
+      $set: {
+        isActive: false
+      }
+    }
+  );
+
+  await existingCategory.deleteOne();
+
   return {
-    id: String(deleted._id)
+    id: String(existingCategory._id)
   };
 };

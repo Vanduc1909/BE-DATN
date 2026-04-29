@@ -6,8 +6,8 @@ import {
   deleteProduct,
   deleteProductVariant,
   getProductById,
-  listProductFilters,
   listNewestProducts,
+  listProductFilters,
   listProductVariants,
   listProducts,
   listTopSellingProducts,
@@ -56,6 +56,10 @@ export const listProductsController = asyncHandler(async (req, res) => {
     colorIds: parseQueryList(req.query.colorIds),
     sizeIds: parseQueryList(req.query.sizeIds),
     priceRanges: parseQueryList(req.query.priceRanges),
+    minRating:
+      req.query.minRating === undefined
+        ? undefined
+        : Number.parseFloat(String(req.query.minRating)),
     search: req.query.search as string | undefined,
     isAvailable:
       req.query.isAvailable === undefined

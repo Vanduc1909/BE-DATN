@@ -12,6 +12,7 @@ export const listProductsSchema = z.object({
     colorIds: z.string().optional(),
     sizeIds: z.string().optional(),
     priceRanges: z.string().optional(),
+    minRating: z.string().optional(),
     search: z.string().optional(),
     isAvailable: z.enum(['true', 'false']).optional()
   })

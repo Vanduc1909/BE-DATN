@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { StatusCodes } from 'http-status-codes';
 import type { Types } from 'mongoose';
 
+import { DEFAULT_CATEGORY_NAME } from '@/services/category.service';
 import { BrandModel } from '@models/brand.model';
 import { CategoryModel } from '@models/category.model';
 import { ColorModel } from '@models/color.model';
@@ -360,6 +361,7 @@ export const listProducts = async (options: {
   colorIds?: string[];
   sizeIds?: string[];
   priceRanges?: string[];
+  minRating?: number;
   search?: string;
   isAvailable?: boolean;
 }) => {
@@ -375,6 +377,11 @@ export const listProducts = async (options: {
 
   if (typeof options.isAvailable === 'boolean') {
     filters.isAvailable = options.isAvailable;
+  }
+
+  if (typeof options.minRating === 'number' && Number.isFinite(options.minRating)) {
+    const normalizedMinRating = Math.min(Math.max(options.minRating, 1), 5);
+    filters.averageRating = { $gte: normalizedMinRating };
   }
 
   const brandFilters = normalizeQueryList(options.brand);
@@ -512,6 +519,7 @@ export const listProductFilters = async () => {
     ? (
         (await CategoryModel.find({
           _id: { $in: Array.from(categoryIds) },
+          name: { $ne: DEFAULT_CATEGORY_NAME },
           isActive: true
         })
           .select('name')
@@ -694,9 +702,14 @@ export const updateProduct = async (productId: string, payload: Partial<ProductP
 
 export const deleteProduct = async (productId: string) => {
   const _productId = toObjectId(productId, 'productId');
+  const existingProduct = await ProductModel.findById(_productId);
+
+  if (!existingProduct) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Product not found');
+  }
   const deleted = await ProductModel.findByIdAndUpdate(
     _productId,
-    { isAvailable: false },
+    { isAvailable: !existingProduct.isAvailable },
     { returnDocument: 'after' }
   ).lean();
 
@@ -706,7 +719,7 @@ export const deleteProduct = async (productId: string) => {
 
   await ProductVariantModel.updateMany(
     { productId: _productId },
-    { isAvailable: false, stockQuantity: 0 }
+    { isAvailable: !existingProduct.isAvailable, stockQuantity: 0 }
   );
 
   return {
