@@ -4,7 +4,6 @@ import type { Role } from '@/types/domain';
 import { ApiError } from '@utils/api-error';
 import type { NextFunction, Request, Response } from 'express';
 
-// worklog: 2026-03-04 12:10:42 | vanduc | cleanup | requireRoles
 export const requireRoles = (...roles: Role[]) => {
   return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user) {

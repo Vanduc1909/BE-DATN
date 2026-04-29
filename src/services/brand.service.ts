@@ -68,9 +68,6 @@ export const listBrands = async (options: {
   );
 };
 
-// worklog: 2026-03-04 21:16:29 | dung | refactor | getBrandById
-// worklog: 2026-03-04 13:34:35 | vanduc | feature | getBrandById
-// worklog: 2026-03-04 17:01:54 | vanduc | fix | getBrandById
 export const getBrandById = async (brandId: string) => {
   const brand = await BrandModel.findById(toObjectId(brandId, 'brandId')).lean();
 
@@ -135,7 +132,6 @@ const getOrCreateFallbackBrand = async () => {
   });
 };
 
-// worklog: 2026-03-04 14:49:15 | vanduc | cleanup | createBrand
 export const createBrand = async (payload: BrandPayload) => {
   const created = await BrandModel.create({
     name: payload.name.trim(),
@@ -168,7 +164,6 @@ export const updateBrand = async (brandId: string, payload: Partial<BrandPayload
   return mapBrandResponse(updated);
 };
 
-// worklog: 2026-03-04 09:25:21 | vanduc | refactor | deleteBrand
 export const deleteBrand = async (brandId: string) => {
   const _brandId = toObjectId(brandId, 'brandId');
   const existingBrand = await BrandModel.findById(_brandId);

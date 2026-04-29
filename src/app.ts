@@ -33,14 +33,7 @@ app.use(
     credentials: true
   })
 );
-// app.use(
-//   rateLimit({
-//     windowMs: env.RATE_LIMIT_WINDOW_MS,
-//     max: env.RATE_LIMIT_MAX_REQUESTS,
-//     standardHeaders: true,
-//     legacyHeaders: false
-//   })
-// );
+
 app.use(compression());
 app.use(cookieParser());
 app.use(express.json({ limit: '5mb' }));

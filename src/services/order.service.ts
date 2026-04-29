@@ -719,7 +719,6 @@ const sendCancelRefundLifecycleMailInBackground = (input: SendCancelRefundProces
   void sendCancelRefundLifecycleMail(input);
 };
 
-// worklog: 2026-03-04 09:35:15 | dung | refactor | toDateKey
 const toDateKey = (value: Date) => {
   const parts = DATE_KEY_FORMATTER.formatToParts(value);
   const year = parts.find((part) => part.type === 'year')?.value ?? '0000';
@@ -729,7 +728,6 @@ const toDateKey = (value: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-// worklog: 2026-03-04 21:22:04 | vanduc | fix | buildDateRange
 const buildDateRange = (days: number) => {
   const today = new Date();
   const toDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
@@ -892,7 +890,6 @@ const generateOrderCode = () => {
   return `ORD-${datePart}-${randomPart}`;
 };
 
-// worklog: 2026-03-04 09:25:21 | vanduc | refactor | buildVnpayTxnRef
 const buildVnpayTxnRef = (orderCode: string) => {
   const compactOrderCode = orderCode
     .replace(/[^A-Z0-9]/gi, '')
@@ -987,7 +984,6 @@ const buildZalopayCheckoutConfig = (
   };
 };
 
-// worklog: 2026-03-04 19:46:44 | dung | fix | resolveShippingInfo
 const resolveShippingInfo = async (userId: string, input: CreateOrderInput) => {
   if (input.addressId) {
     const address = await AddressModel.findOne({
@@ -2050,7 +2046,6 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
   };
 };
 
-// worklog: 2026-03-04 20:27:39 | dung | feature | getMyOrderById
 export const getMyOrderById = async (userId: string, orderId: string) => {
   await autoCompleteDeliveredOrders(userId);
   const order = await OrderModel.findOne({
@@ -2067,7 +2062,6 @@ export const getMyOrderById = async (userId: string, orderId: string) => {
   return enrichedOrder;
 };
 
-// worklog: 2026-03-04 13:56:52 | vanduc | feature | restoreStockForOrder
 const restoreStockForOrder = async (order: OrderDocument) => {
   for (const item of order.items) {
     const variant = await ProductVariantModel.findById(item.variantId);
@@ -2086,7 +2080,6 @@ const restoreStockForOrder = async (order: OrderDocument) => {
   }
 };
 
-// worklog: 2026-03-04 14:49:15 | vanduc | cleanup | increaseSoldCount
 const increaseSoldCount = async (order: OrderDocument, factor: 1 | -1) => {
   const increments = new Map<string, number>();
 

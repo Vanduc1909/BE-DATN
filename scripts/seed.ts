@@ -216,7 +216,6 @@ const dropCollectionIfExists = async (collection: { name: string; drop: () => Pr
     const code = (error as { code?: number })?.code;
     const message = (error as Error).message?.toLowerCase() ?? '';
 
-    // Ignore "NamespaceNotFound" when collection does not exist yet.
     if (code !== 26 && !message.includes('ns not found')) {
       throw error;
     }

@@ -10,7 +10,6 @@ export const runInTransaction = async <T>(handler: (session: ClientSession) => P
       result = await handler(session);
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     return result!;
   } finally {
     await session.endSession();

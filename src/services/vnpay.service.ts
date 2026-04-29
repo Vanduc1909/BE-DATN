@@ -33,8 +33,6 @@ interface VerifyVnpayReturnResult {
 const VNPAY_TIMEZONE_OFFSET_MS = 7 * 60 * 60 * 1000;
 const VNPAY_PAYMENT_TIMEOUT_MINUTES = 15;
 
-// worklog: 2026-03-04 19:32:10 | dung | feature | isVnpayConfigured
-// worklog: 2026-03-04 09:35:15 | dung | refactor | isVnpayConfigured
 const isVnpayConfigured = () => {
   return Boolean(env.VNP_URL && env.VNP_HASHSECRET && env.VNP_RETURNURL && env.VNP_TMNCODE);
 };
@@ -82,7 +80,6 @@ const signParams = (params: Record<string, string>) => {
     .digest('hex');
 };
 
-// worklog: 2026-03-04 13:56:52 | vanduc | feature | normalizeIpAddress
 const normalizeIpAddress = (rawIp?: string) => {
   if (!rawIp) {
     return '127.0.0.1';
@@ -103,7 +100,6 @@ const normalizeIpAddress = (rawIp?: string) => {
   return rawIp;
 };
 
-// worklog: 2026-03-04 13:34:35 | vanduc | feature | normalizeVnpParams
 const normalizeVnpParams = (payload: VerifyVnpayReturnInput) => {
   const entries = Object.entries(payload);
   const normalizedParams: Record<string, string> = {};

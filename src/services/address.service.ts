@@ -15,7 +15,6 @@ interface AddressPayload {
   isDefault?: boolean;
 }
 
-// worklog: 2026-03-04 19:46:44 | dung | fix | ensureUserDefaultAddress
 const ensureUserDefaultAddress = async (userId: string, excludeAddressId?: string) => {
   const filters: Record<string, unknown> = {
     userId: toObjectId(userId, 'userId'),
@@ -141,7 +140,6 @@ export const updateMyAddress = async (
   return address.toObject();
 };
 
-// worklog: 2026-03-04 17:01:54 | vanduc | fix | deleteMyAddress
 export const deleteMyAddress = async (userId: string, addressId: string) => {
   const _userId = toObjectId(userId, 'userId');
   const _addressId = toObjectId(addressId, 'addressId');

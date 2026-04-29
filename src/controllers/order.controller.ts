@@ -35,7 +35,6 @@ const getUserId = (req: Request) => {
   return userId;
 };
 
-// worklog: 2026-03-04 20:35:23 | dung | feature | getClientIpAddress
 const getClientIpAddress = (req: Request) => {
   const xForwardedFor = req.headers['x-forwarded-for'];
 

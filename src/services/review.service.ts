@@ -68,7 +68,6 @@ const mapReviewUser = (rawUser: unknown) => {
   };
 };
 
-// worklog: 2026-03-04 19:12:59 | vanduc | feature | mapReviewProduct
 const mapReviewProduct = (rawProduct: unknown) => {
   if (!rawProduct || typeof rawProduct !== 'object' || !('_id' in rawProduct)) {
     return {
@@ -103,7 +102,6 @@ const buildReviewSearchFilter = (search?: string) => {
   };
 };
 
-// worklog: 2026-03-04 21:58:50 | dung | cleanup | recalculateProductRating
 const recalculateProductRating = async (productId: string) => {
   const _productId = toObjectId(productId, 'productId');
   const stats = await ReviewModel.aggregate<{ averageRating: number; reviewCount: number }>([
@@ -171,7 +169,6 @@ export const listReviewsByProduct = async (
   return toPaginatedData(enrichedItems, totalItems, options.page, options.limit);
 };
 
-// worklog: 2026-03-04 13:34:35 | vanduc | feature | listAllReviews
 export const listAllReviews = async (options: ListAllReviewsInput) => {
   const filters: Record<string, unknown> = {};
 
@@ -226,7 +223,6 @@ export const listAllReviews = async (options: ListAllReviewsInput) => {
   return toPaginatedData(enrichedItems, totalItems, options.page, options.limit);
 };
 
-// worklog: 2026-03-04 17:01:54 | vanduc | fix | createReview
 export const createReview = async (userId: string, payload: CreateReviewInput) => {
   const _userId = toObjectId(userId, 'userId');
   const _orderId = toObjectId(payload.orderId, 'orderId');
@@ -363,7 +359,6 @@ export const moderateReview = async (reviewId: string, isPublished: boolean) => 
   return review.toObject();
 };
 
-// worklog: 2026-03-04 20:27:39 | dung | feature | deleteReviewByStaff
 export const deleteReviewByStaff = async (reviewId: string) => {
   const reviewExists = await ReviewModel.exists({
     _id: toObjectId(reviewId, 'reviewId')
@@ -376,7 +371,6 @@ export const deleteReviewByStaff = async (reviewId: string) => {
   throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Đánh giá chỉ được ẩn, không được xóa');
 };
 
-// worklog: 2026-03-04 09:35:15 | dung | refactor | replyReview
 export const replyReview = async (reviewId: string, userId: string, replyContent: string) => {
   const updated = await ReviewModel.findByIdAndUpdate(
     toObjectId(reviewId, 'reviewId'),

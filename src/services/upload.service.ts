@@ -32,9 +32,6 @@ const toUploadResult = (res: UploadApiResponse): UploadResult => ({
   size: res.bytes
 });
 
-/**
- * Upload ảnh từ buffer lên Cloudinary.
- */
 export const uploadImageFromBuffer = async (
   buffer: Buffer,
   options: UploadImageOptions = {}
@@ -81,9 +78,6 @@ export const uploadImageFromBuffer = async (
   });
 };
 
-/**
- * Upload ảnh từ URL bên ngoài lên Cloudinary.
- */
 export const uploadImageFromUrl = async (
   imageUrl: string,
   options: UploadImageOptions = {}
@@ -110,9 +104,6 @@ export const uploadImageFromUrl = async (
   return toUploadResult(result);
 };
 
-/**
- * Xoá ảnh khỏi Cloudinary theo publicId.
- */
 export const deleteImage = async (publicId: string): Promise<void> => {
   if (!isCloudinaryConfigured()) {
     throw new ApiError(StatusCodes.SERVICE_UNAVAILABLE, 'Cloudinary chưa được cấu hình');

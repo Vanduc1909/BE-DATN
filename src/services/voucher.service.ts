@@ -136,7 +136,6 @@ export const listAvailableVouchersForCheckout = async (
   );
 };
 
-// worklog: 2026-03-04 21:58:50 | dung | cleanup | getVoucherById
 export const getVoucherById = async (voucherId: string) => {
   const voucher = await VoucherModel.findOne(
     buildActiveVoucherFilters({
@@ -180,7 +179,6 @@ export const createVoucher = async (payload: VoucherPayload) => {
   return created.toObject();
 };
 
-// worklog: 2026-03-04 09:45:01 | vanduc | cleanup | updateVoucher
 export const updateVoucher = async (voucherId: string, payload: Partial<VoucherPayload>) => {
   if (
     payload.startDate &&
@@ -243,7 +241,6 @@ export const updateVoucher = async (voucherId: string, payload: Partial<VoucherP
   return updated;
 };
 
-// worklog: 2026-03-04 13:56:52 | vanduc | feature | deleteVoucher
 export const deleteVoucher = async (voucherId: string) => {
   const deleted = await VoucherModel.findOneAndUpdate(
     buildActiveVoucherFilters({
