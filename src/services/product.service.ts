@@ -14,6 +14,7 @@ import { toObjectId } from '@utils/object-id';
 import { toPaginatedData } from '@utils/pagination';
 
 const MAX_PRODUCT_VARIANTS = 8;
+const DEFAULT_BRAND_NAME = 'Không xác định';
 
 interface ProductPayload {
   name: string;
@@ -288,7 +289,7 @@ const resolveProductBrandInput = async (payload: {
 
     return {
       brandId: toObjectId(rawBrandId, 'brandId'),
-      brand: brand.name?.trim() || 'Generic'
+      brand: brand.name?.trim() || DEFAULT_BRAND_NAME
     };
   }
 
@@ -296,7 +297,7 @@ const resolveProductBrandInput = async (payload: {
 
   if (!rawBrandName) {
     return {
-      brand: 'Generic'
+      brand: DEFAULT_BRAND_NAME
     };
   }
 

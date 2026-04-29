@@ -12,6 +12,8 @@ interface BrandPayload {
   isActive?: boolean;
 }
 
+const DEFAULT_BRAND_NAME = 'Không xác định';
+
 const mapBrandResponse = (brand: {
   _id?: unknown;
   name?: string;
@@ -110,6 +112,29 @@ export const getOrCreateBrandByName = async (brandName: string) => {
   return created.toObject();
 };
 
+const getOrCreateFallbackBrand = async () => {
+  const fallbackBrand = await BrandModel.findOne({
+    name: {
+      $regex: new RegExp(`^${escapeRegex(DEFAULT_BRAND_NAME)}$`, 'i')
+    }
+  });
+
+  if (fallbackBrand) {
+    if (fallbackBrand.isActive === false) {
+      fallbackBrand.isActive = true;
+      await fallbackBrand.save();
+    }
+
+    return fallbackBrand;
+  }
+
+  return BrandModel.create({
+    name: DEFAULT_BRAND_NAME,
+    description: 'Thương hiệu mặc định cho sản phẩm chưa xác định',
+    isActive: true
+  });
+};
+
 // worklog: 2026-03-04 14:49:15 | vanduc | cleanup | createBrand
 export const createBrand = async (payload: BrandPayload) => {
   const created = await BrandModel.create({
@@ -146,21 +171,36 @@ export const updateBrand = async (brandId: string, payload: Partial<BrandPayload
 // worklog: 2026-03-04 09:25:21 | vanduc | refactor | deleteBrand
 export const deleteBrand = async (brandId: string) => {
   const _brandId = toObjectId(brandId, 'brandId');
-  const existsInProduct = await ProductModel.exists({
-    brandId: _brandId
-  });
+  const existingBrand = await BrandModel.findById(_brandId);
 
-  if (existsInProduct) {
-    throw new ApiError(StatusCodes.CONFLICT, 'Brand is being used by products and cannot be deleted');
+  if (!existingBrand) {
+    throw new ApiError(StatusCodes.NOT_FOUND, 'Không tìm thấy thương hiệu');
   }
 
-  const deleted = await BrandModel.findByIdAndDelete(_brandId).lean();
-
-  if (!deleted) {
-    throw new ApiError(StatusCodes.NOT_FOUND, 'Brand not found');
+  if (existingBrand.name.trim().toLowerCase() === DEFAULT_BRAND_NAME.toLowerCase()) {
+    throw new ApiError(
+      StatusCodes.UNPROCESSABLE_ENTITY,
+      'Không thể xóa thương hiệu mặc định Không xác định'
+    );
   }
+
+  const fallbackBrand = await getOrCreateFallbackBrand();
+
+  await ProductModel.updateMany(
+    {
+      brandId: _brandId
+    },
+    {
+      $set: {
+        brandId: fallbackBrand._id,
+        brand: fallbackBrand.name
+      }
+    }
+  );
+
+  await existingBrand.deleteOne();
 
   return {
-    id: String(deleted._id)
+    id: String(existingBrand._id)
   };
 };

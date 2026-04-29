@@ -21,7 +21,7 @@ const productSchema = new Schema<ProductDocument>(
     name: { type: String, required: true, trim: true },
     categoryId: { type: Schema.Types.ObjectId, ref: 'Category', required: true },
     brandId: { type: Schema.Types.ObjectId, ref: 'Brand' },
-    brand: { type: String, required: true, trim: true, default: 'Generic' },
+    brand: { type: String, required: true, trim: true, default: 'Không xác định' },
     description: { type: String },
     attributes: { type: Schema.Types.Mixed },
     images: [{ type: String }],

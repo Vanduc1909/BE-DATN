@@ -365,17 +365,15 @@ export const moderateReview = async (reviewId: string, isPublished: boolean) => 
 
 // worklog: 2026-03-04 20:27:39 | dung | feature | deleteReviewByStaff
 export const deleteReviewByStaff = async (reviewId: string) => {
-  const deleted = await ReviewModel.findByIdAndDelete(toObjectId(reviewId, 'reviewId')).lean();
+  const reviewExists = await ReviewModel.exists({
+    _id: toObjectId(reviewId, 'reviewId')
+  });
 
-  if (!deleted) {
+  if (!reviewExists) {
     throw new ApiError(StatusCodes.NOT_FOUND, 'Review not found');
   }
 
-  await recalculateProductRating(String(deleted.productId));
-
-  return {
-    id: String(deleted._id)
-  };
+  throw new ApiError(StatusCodes.UNPROCESSABLE_ENTITY, 'Đánh giá chỉ được ẩn, không được xóa');
 };
 
 // worklog: 2026-03-04 09:35:15 | dung | refactor | replyReview

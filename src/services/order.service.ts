@@ -234,6 +234,7 @@ const REFUND_METHOD_LABELS: Record<RefundMethod, string> = {
   bank_transfer: 'Chuyển khoản',
   wallet: 'Hoàn vào ví'
 };
+const DEFAULT_BRAND_NAME = 'Không xác định';
 
 const isOnlinePaymentMethod = (paymentMethod: PaymentMethod) => {
   return paymentMethod === 'vnpay' || paymentMethod === 'zalopay';
@@ -1713,7 +1714,7 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
             $ifNull: ['$product.name', '$snapshotName']
           },
           brand: {
-            $ifNull: ['$product.brand', 'Generic']
+            $ifNull: ['$product.brand', DEFAULT_BRAND_NAME]
           },
           soldCount: 1,
           revenue: 1,
@@ -1779,7 +1780,7 @@ export const getOrderStatistics = async (options: ListOrderStatisticsOptions) =>
             $ifNull: ['$product.name', '$snapshotName']
           },
           brand: {
-            $ifNull: ['$product.brand', 'Generic']
+            $ifNull: ['$product.brand', DEFAULT_BRAND_NAME]
           },
           soldCount: 1,
           revenue: 1,
@@ -2163,6 +2164,7 @@ export const updateOrderStatus = async ({
   }
 
   const previousStatus = order.status;
+  const previousPaymentStatus = order.paymentStatus;
   assertOrderTransitionAllowed(previousStatus, status);
 
   if (status === 'cancelled' || status === 'returned') {
@@ -2203,6 +2205,15 @@ export const updateOrderStatus = async ({
   const customer = await UserModel.findById(order.userId).select('email fullName').lean();
 
   if (customer?.email) {
+    if (order.paymentStatus === 'paid' && previousPaymentStatus !== 'paid') {
+      sendOrderLifecycleMailInBackground({
+        to: customer.email,
+        customerName: customer.fullName,
+        order: order.toObject() as OrderMailSnapshot,
+        event: 'payment_success'
+      });
+    }
+
     sendOrderLifecycleMailInBackground({
       to: customer.email,
       customerName: customer.fullName,
@@ -2262,6 +2273,7 @@ export const confirmOrderReceived = async (userId: string, orderId: string) => {
     );
   }
 
+  const previousPaymentStatus = order.paymentStatus;
   order.status = 'completed';
   if (!order.completedAt) {
     order.completedAt = new Date();
@@ -2280,6 +2292,15 @@ export const confirmOrderReceived = async (userId: string, orderId: string) => {
   const customer = await UserModel.findById(order.userId).select('email fullName').lean();
 
   if (customer?.email) {
+    if (order.paymentStatus === 'paid' && previousPaymentStatus !== 'paid') {
+      sendOrderLifecycleMailInBackground({
+        to: customer.email,
+        customerName: customer.fullName,
+        order: order.toObject() as OrderMailSnapshot,
+        event: 'payment_success'
+      });
+    }
+
     sendOrderLifecycleMailInBackground({
       to: customer.email,
       customerName: customer.fullName,
